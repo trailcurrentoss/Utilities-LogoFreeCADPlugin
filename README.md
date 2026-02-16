@@ -60,6 +60,6 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 ## Links
 
-- [GitHub Repository](https://github.com/trailcurrentoss/FreeCAD-TrailCurrentLogo)
-- [Issue Tracker](https://github.com/trailcurrentoss/FreeCAD-TrailCurrentLogo/issues)
+- [GitHub Repository](https://github.com/trailcurrentoss/Utilities-LogoFreeCADPlugin)
+- [Issue Tracker](https://github.com/trailcurrentoss/Utilities-LogoFreeCADPlugin/issues)
 - [TrailCurrent Project](https://github.com/trailcurrentoss)

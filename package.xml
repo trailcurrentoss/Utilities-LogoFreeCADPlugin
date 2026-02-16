@@ -5,8 +5,8 @@
   <version>1.0.0</version>
   <maintainer email="info@trailcurrent.com">TrailCurrent</maintainer>
   <license file="LICENSE">MIT</license>
-  <url type="repository" branch="main">https://github.com/trailcurrentoss/FreeCAD-TrailCurrentLogo</url>
-  <url type="bugtracker">https://github.com/trailcurrentoss/FreeCAD-TrailCurrentLogo/issues</url>
+  <url type="repository" branch="main">https://github.com/trailcurrentoss/Utilities-LogoFreeCADPlugin</url>
+  <url type="bugtracker">https://github.com/trailcurrentoss/Utilities-LogoFreeCADPlugin/issues</url>
   <icon>resources/icons/TrailCurrentLogo.svg</icon>
 
   <content>

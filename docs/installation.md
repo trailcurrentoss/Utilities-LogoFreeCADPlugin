@@ -12,7 +12,7 @@ The Addon Manager is FreeCAD's built-in package manager. This is the easiest way
 4. Select **Custom repositories**
 5. In the **Repository URL** field, enter:
    ```
-   https://github.com/trailcurrentoss/FreeCAD-TrailCurrentLogo
+   https://github.com/trailcurrentoss/Utilities-LogoFreeCADPlugin
    ```
 6. Leave the branch field empty (defaults to `main`)
 7. Click **Add**
@@ -39,8 +39,8 @@ If you cloned or downloaded the repository yourself, an install script is provid
 ### Clone and install
 
 ```bash
-git clone https://github.com/trailcurrentoss/FreeCAD-TrailCurrentLogo.git
-cd FreeCAD-TrailCurrentLogo
+git clone https://github.com/trailcurrentoss/Utilities-LogoFreeCADPlugin.git
+cd Utilities-LogoFreeCADPlugin
 chmod +x install.sh
 ./install.sh
 ```
@@ -73,7 +73,7 @@ If the install script doesn't cover your setup, you can copy the plugin manually
 
 2. Copy the entire plugin folder into that Mod directory:
    ```bash
-   cp -r FreeCAD-TrailCurrentLogo /path/to/FreeCAD/Mod/
+   cp -r Utilities-LogoFreeCADPlugin /path/to/FreeCAD/Mod/
    ```
 
 3. Restart FreeCAD
