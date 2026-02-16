@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <defs>
+    <linearGradient id="iconGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#52a441"/>
+      <stop offset="100%" style="stop-color:#74fe00"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="24" cy="24" r="22" fill="#52a441"/>
+
+  <!-- Mountain silhouette -->
+  <path d="M6 36 L16 14 L22 22 L32 8 L42 36 Z" fill="#3d7d31"/>
+
+  <!-- Winding trail path -->
+  <path d="M10 32 Q16 26 22 30 Q28 34 34 28 Q38 24 42 26"
+        stroke="#ffffff"
+        stroke-width="3"
+        stroke-linecap="round"
+        fill="none"/>
+
+  <!-- Current/electricity accent -->
+  <path d="M34 14 L38 22 L32 22 L36 32"
+        stroke="#74fe00"
+        stroke-width="2.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        fill="none"/>
+</svg>
