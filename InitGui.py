@@ -12,6 +12,9 @@ try:
     _plugin_dir = os.path.dirname(os.path.abspath(
         inspect.currentframe().f_code.co_filename
     ))
+    # FreeCAD exec()s this file with separate globals/locals dicts.
+    # Class bodies can only see globals, so we must store it there.
+    globals()['_plugin_dir'] = _plugin_dir
 
     if _plugin_dir not in sys.path:
         sys.path.insert(0, _plugin_dir)
@@ -22,7 +25,7 @@ try:
 
     class TrailCurrentLogoWorkbench(FreeCADGui.Workbench):
         MenuText = "TrailCurrent Logo"
-        ToolTip = "Deboss the TrailCurrent brand logo onto flat surfaces"
+        ToolTip = "Deboss the TrailCurrent brand logo and emboss QR codes onto flat surfaces"
         Icon = os.path.join(_plugin_dir, "resources", "icons", "TrailCurrentLogo.svg")
 
         def GetClassName(self):
@@ -31,8 +34,10 @@ try:
         def Initialize(self):
             FreeCAD.Console.PrintMessage("TrailCurrent Logo: Initialize()\n")
             import logo_command
-            self.appendToolbar("TrailCurrent Logo", ["TrailCurrent_DebossLogo"])
-            self.appendMenu("TrailCurrent", ["TrailCurrent_DebossLogo"])
+            import qr_command
+            cmd_list = ["TrailCurrent_DebossLogo", "TrailCurrent_QRCodeEmboss"]
+            self.appendToolbar("TrailCurrent Logo", cmd_list)
+            self.appendMenu("TrailCurrent", cmd_list)
 
         def Activated(self):
             FreeCAD.Console.PrintMessage("TrailCurrent Logo: Activated\n")

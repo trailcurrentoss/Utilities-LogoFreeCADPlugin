@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install the TrailCurrent Logo Deboss plugin into FreeCAD.
+# Install the TrailCurrent Logo & QR Code plugin into FreeCAD.
 #
 # Usage (local development):
 #   ./install.sh
@@ -51,8 +51,12 @@ if [ "$IS_SNAP" = "1" ]; then
     fi
 
     cp -r "$PLUGIN_DIR" "$DEST"
-    # Remove .git directory from the copy (not needed at runtime)
+    # Remove development artifacts from the copy
     rm -rf "$DEST/.git"
+    rm -rf "$DEST/.claude"
+    rm -rf "$DEST/__pycache__"
+    find "$DEST" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+    find "$DEST" -name "*.pyc" -delete 2>/dev/null || true
     echo "Copied: $PLUGIN_DIR -> $DEST"
 else
     # Native install: symlink
@@ -69,3 +73,7 @@ fi
 echo ""
 echo "Restart FreeCAD to load the workbench."
 echo "Look for 'TrailCurrent Logo' in the workbench dropdown."
+echo ""
+echo "Available tools:"
+echo "  - Deboss TrailCurrent Logo  (multi-level relief logo)"
+echo "  - QR Code Emboss            (scannable QR codes)"

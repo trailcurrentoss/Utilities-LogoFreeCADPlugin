@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <package format="1" xmlns="https://wiki.freecad.org/Package_Metadata">
   <name>TrailCurrent Logo</name>
-  <description>Deboss the TrailCurrent brand logo onto any flat face in FreeCAD. Features configurable multi-level depth relief with four distinct layers: circle background, mountain silhouette, winding trail path, and lightning bolt accent. Designed for 3D-printed enclosures and cases.</description>
-  <version>1.0.0</version>
+  <description>Brand your 3D-printed parts with the TrailCurrent logo and scannable QR codes. Deboss the logo as a multi-level relief with four depth layers, or emboss/deboss QR codes linking to tutorials, instructional videos, or online materials. Includes configurable sizing, depth, placement offsets, and double-click re-editing. The qrcode Python package is bundled — no separate installation required.</description>
+  <version>2.0.0</version>
   <maintainer email="info@trailcurrent.com">TrailCurrent</maintainer>
   <license file="LICENSE">MIT</license>
   <url type="repository" branch="main">https://github.com/trailcurrentoss/Utilities-LogoFreeCADPlugin</url>
@@ -13,13 +13,16 @@
     <workbench>
       <classname>TrailCurrentLogoWorkbench</classname>
       <subdirectory>./</subdirectory>
-      <freecadmin>0.20.0</freecadmin>
+      <freecadmin>0.21.0</freecadmin>
       <tag>trailcurrent</tag>
       <tag>logo</tag>
       <tag>deboss</tag>
+      <tag>emboss</tag>
       <tag>engrave</tag>
-      <tag>3dprinting</tag>
+      <tag>qrcode</tag>
+      <tag>qr</tag>
       <tag>branding</tag>
+      <tag>3dprinting</tag>
     </workbench>
   </content>
 </package>

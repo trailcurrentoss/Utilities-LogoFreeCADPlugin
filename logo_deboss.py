@@ -90,6 +90,8 @@ def apply_logo(
     mountain_ratio=0.55,
     trail_ratio=0.30,
     bolt_ratio=0.15,
+    x_offset=0.0,
+    y_offset=0.0,
 ):
     """Deboss the TrailCurrent logo onto a face of a body.
 
@@ -108,6 +110,8 @@ def apply_logo(
         mountain_ratio: Mountain depth as fraction of total_depth (0-1).
         trail_ratio:    Trail depth as fraction of total_depth (0-1).
         bolt_ratio:     Bolt depth as fraction of total_depth (0-1).
+        x_offset:   Horizontal offset from face centre in mm.
+        y_offset:   Vertical offset from face centre in mm.
 
     Returns:
         A new Part.Shape with the logo debossed.
@@ -116,7 +120,10 @@ def apply_logo(
     # 1. Compute face coordinate frame and transformation matrix
     # ------------------------------------------------------------------
     center, u_axis, v_axis, normal = _compute_face_frame(face)
-    mat = _build_transform(center, u_axis, v_axis, normal)
+    # Apply user-specified offset in the face plane
+    placement = Vector(center)
+    placement = placement + u_axis * x_offset + v_axis * y_offset
+    mat = _build_transform(placement, u_axis, v_axis, normal)
 
     # ------------------------------------------------------------------
     # 2. Create raw 2D logo faces and isolate non-overlapping layers

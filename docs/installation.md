@@ -78,13 +78,19 @@ If the install script doesn't cover your setup, you can copy the plugin manually
 
 3. Restart FreeCAD
 
+## Dependencies
+
+The `qrcode` Python package is **bundled** inside the plugin directory (`qrcode/`). No separate `pip install` is needed. This avoids compatibility issues with FreeCAD's sandboxed Python environment (especially snap installs).
+
 ## Verifying the Installation
 
 After restarting FreeCAD:
 
 1. Look for **TrailCurrent Logo** in the workbench dropdown (the dropdown selector in the main toolbar, usually set to "Start" or "Part Design" by default)
 2. If you see it listed, the installation was successful
-3. Switch to it and you should see the **Deboss TrailCurrent Logo** button in the toolbar
+3. Switch to it and you should see two toolbar buttons:
+   - **Deboss TrailCurrent Logo** -- the TrailCurrent logo icon
+   - **QR Code Emboss** -- the QR code icon
 
 ### Troubleshooting
 
@@ -93,8 +99,11 @@ After restarting FreeCAD:
 - Check the FreeCAD Python console (View > Panels > Python console) for error messages mentioning "TrailCurrent"
 - Verify the files are in the correct Mod directory by checking that `InitGui.py` exists at the top level of the plugin folder inside Mod
 
-**"No module named logo_command" error in the console:**
+**"No module named logo_command" or "No module named qr_command" error:**
 - The plugin directory may not be on Python's search path. This is usually handled automatically, but if you see this error, check that all `.py` files are in the same directory as `InitGui.py`
+
+**"qrcode package not installed" warning in the QR panel:**
+- The bundled `qrcode/` directory may be missing. Re-clone or re-download the repository and reinstall.
 
 ## Uninstalling
 
