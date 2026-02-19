@@ -21,7 +21,28 @@ class _LogoDebossProxy:
         obj.Proxy = self
 
     def execute(self, obj):
-        pass  # Shape is set manually in accept()
+        """Recompute the shape from BaseFeature (PartDesign mode)."""
+        if not hasattr(obj, "Logo_Diameter"):
+            return
+        if not hasattr(obj, "BaseFeature") or obj.BaseFeature is None:
+            return  # Part::FeaturePython at document root — shape set in accept()
+        try:
+            from logo_deboss import apply_logo
+            base_shape = obj.BaseFeature.Shape
+            face = getattr(base_shape, obj.Logo_FaceName)
+            obj.Shape = apply_logo(
+                base_shape, face,
+                diameter=obj.Logo_Diameter,
+                total_depth=obj.Logo_TotalDepth,
+                mountain_ratio=obj.Logo_MountainPct / 100.0,
+                trail_ratio=obj.Logo_TrailPct / 100.0,
+                bolt_ratio=obj.Logo_BoltPct / 100.0,
+                x_offset=getattr(obj, "Logo_XOffset", 0.0),
+                y_offset=getattr(obj, "Logo_YOffset", 0.0),
+            )
+        except Exception as e:
+            FreeCAD.Console.PrintError(
+                "Logo Deboss recompute failed: {}\n".format(e))
 
     def __getstate__(self):
         return None
@@ -44,7 +65,7 @@ class _LogoDebossViewProvider:
         if not hasattr(obj, "Logo_Diameter"):
             return False
 
-        original = FreeCAD.ActiveDocument.getObject(obj.Logo_OriginalBody)
+        original = _get_logo_base_object(obj)
         if original is None:
             QtWidgets.QMessageBox.warning(
                 None, "Logo Deboss",
@@ -100,6 +121,72 @@ class _LogoDebossViewProvider:
 
     def __setstate__(self, state):
         return None
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _find_body(obj):
+    """Return the PartDesign::Body that *obj* belongs to, or None.
+
+    Works whether *obj* is the Body itself or a feature inside it.
+    """
+    if hasattr(obj, "TypeId") and obj.TypeId == "PartDesign::Body":
+        return obj
+    if hasattr(obj, "getParentGeoFeatureGroup"):
+        parent = obj.getParentGeoFeatureGroup()
+        if (parent is not None
+                and hasattr(parent, "TypeId")
+                and parent.TypeId == "PartDesign::Body"):
+            return parent
+    return None
+
+
+def _add_logo_properties(obj):
+    """Add custom storage properties to a LogoDeboss feature object."""
+    obj.addProperty(
+        "App::PropertyFloat", "Logo_Diameter", "Logo Deboss",
+        "Logo diameter (mm)")
+    obj.addProperty(
+        "App::PropertyFloat", "Logo_TotalDepth", "Logo Deboss",
+        "Total deboss depth (mm)")
+    obj.addProperty(
+        "App::PropertyFloat", "Logo_MountainPct", "Logo Deboss",
+        "Mountain depth (%)")
+    obj.addProperty(
+        "App::PropertyFloat", "Logo_TrailPct", "Logo Deboss",
+        "Trail depth (%)")
+    obj.addProperty(
+        "App::PropertyFloat", "Logo_BoltPct", "Logo Deboss",
+        "Bolt depth (%)")
+    obj.addProperty(
+        "App::PropertyFloat", "Logo_XOffset", "Logo Deboss",
+        "Horizontal offset from face centre (mm)")
+    obj.addProperty(
+        "App::PropertyFloat", "Logo_YOffset", "Logo Deboss",
+        "Vertical offset from face centre (mm)")
+    obj.addProperty(
+        "App::PropertyString", "Logo_FaceName", "Logo Deboss",
+        "Face used on the original body")
+    obj.addProperty(
+        "App::PropertyString", "Logo_OriginalBody", "Logo Deboss",
+        "Original body object name")
+
+
+def _get_logo_base_object(obj):
+    """Return the base object that a LogoDeboss result was derived from.
+
+    For PartDesign features this is the BaseFeature; for document-level
+    Part objects it is looked up by the stored Logo_OriginalBody name.
+    Returns None if the base cannot be found.
+    """
+    if hasattr(obj, "BaseFeature") and obj.BaseFeature is not None:
+        return obj.BaseFeature
+    orig_name = getattr(obj, "Logo_OriginalBody", None)
+    if orig_name:
+        return FreeCAD.ActiveDocument.getObject(orig_name)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -287,45 +374,43 @@ class DebossLogoTaskPanel:
             )
             return False
 
-        # If re-editing, remove the old result first
-        if self.edit_obj is not None:
-            doc.removeObject(self.edit_obj.Name)
+        # Detect whether we are working inside a PartDesign::Body
+        body = _find_body(self.body_obj)
+        is_pd_edit = (self.edit_obj is not None
+                      and hasattr(self.edit_obj, "BaseFeature")
+                      and self.edit_obj.BaseFeature is not None)
 
-        # Create the result as a FeaturePython (enables double-click re-edit)
-        result_obj = doc.addObject("Part::FeaturePython", "LogoDeboss")
-        _LogoDebossProxy(result_obj)
-        _LogoDebossViewProvider(result_obj.ViewObject)
-        result_obj.Shape = new_shape
+        if is_pd_edit:
+            # Re-editing a PartDesign feature — update in place
+            result_obj = self.edit_obj
+            result_obj.Shape = new_shape
+        elif body is not None:
+            # New operation inside a PartDesign::Body
+            prev_tip = body.Tip
+            result_obj = doc.addObject(
+                "PartDesign::FeaturePython", "LogoDeboss")
+            _LogoDebossProxy(result_obj)
+            _LogoDebossViewProvider(result_obj.ViewObject)
+            _add_logo_properties(result_obj)
+            result_obj.Shape = new_shape
+            # Add to Body (sets BaseFeature & Tip automatically)
+            body.addObject(result_obj)
+            # Ensure BaseFeature links to the previous tip
+            if prev_tip is not None:
+                result_obj.BaseFeature = prev_tip
+        else:
+            # Non-PartDesign: standalone Part::FeaturePython at doc root
+            if self.edit_obj is not None:
+                doc.removeObject(self.edit_obj.Name)
+            result_obj = doc.addObject("Part::FeaturePython", "LogoDeboss")
+            _LogoDebossProxy(result_obj)
+            _LogoDebossViewProvider(result_obj.ViewObject)
+            result_obj.Shape = new_shape
+            _add_logo_properties(result_obj)
+            # Hide the original so the debossed version is visible
+            self.body_obj.ViewObject.Visibility = False
 
-        # Store parameters so the logo can be re-edited later
-        result_obj.addProperty(
-            "App::PropertyFloat", "Logo_Diameter", "Logo Deboss",
-            "Logo diameter (mm)")
-        result_obj.addProperty(
-            "App::PropertyFloat", "Logo_TotalDepth", "Logo Deboss",
-            "Total deboss depth (mm)")
-        result_obj.addProperty(
-            "App::PropertyFloat", "Logo_MountainPct", "Logo Deboss",
-            "Mountain depth (%)")
-        result_obj.addProperty(
-            "App::PropertyFloat", "Logo_TrailPct", "Logo Deboss",
-            "Trail depth (%)")
-        result_obj.addProperty(
-            "App::PropertyFloat", "Logo_BoltPct", "Logo Deboss",
-            "Bolt depth (%)")
-        result_obj.addProperty(
-            "App::PropertyFloat", "Logo_XOffset", "Logo Deboss",
-            "Horizontal offset from face centre (mm)")
-        result_obj.addProperty(
-            "App::PropertyFloat", "Logo_YOffset", "Logo Deboss",
-            "Vertical offset from face centre (mm)")
-        result_obj.addProperty(
-            "App::PropertyString", "Logo_FaceName", "Logo Deboss",
-            "Face used on the original body")
-        result_obj.addProperty(
-            "App::PropertyString", "Logo_OriginalBody", "Logo Deboss",
-            "Original body object name")
-
+        # Store / update parameter values
         result_obj.Logo_Diameter = diameter
         result_obj.Logo_TotalDepth = total_depth
         result_obj.Logo_MountainPct = self.mountain_spin.value()
@@ -333,20 +418,20 @@ class DebossLogoTaskPanel:
         result_obj.Logo_BoltPct = self.bolt_spin.value()
         result_obj.Logo_XOffset = x_offset
         result_obj.Logo_YOffset = y_offset
-        result_obj.Logo_FaceName = self.face_name
-        result_obj.Logo_OriginalBody = self.body_obj.Name
+        if not is_pd_edit:
+            result_obj.Logo_FaceName = self.face_name
+            result_obj.Logo_OriginalBody = (
+                body.Name if body is not None else self.body_obj.Name)
 
-        # Copy visual properties from the source
-        if hasattr(self.body_obj, "ViewObject"):
-            src_vo = self.body_obj.ViewObject
-            dst_vo = result_obj.ViewObject
-            if hasattr(src_vo, "ShapeColor"):
-                dst_vo.ShapeColor = src_vo.ShapeColor
-            if hasattr(src_vo, "Transparency"):
-                dst_vo.Transparency = src_vo.Transparency
-
-        # Hide the original body so the debossed version is visible
-        self.body_obj.ViewObject.Visibility = False
+        # Copy visual properties (non-PartDesign only — Body handles its own)
+        if body is None and not is_pd_edit:
+            if hasattr(self.body_obj, "ViewObject"):
+                src_vo = self.body_obj.ViewObject
+                dst_vo = result_obj.ViewObject
+                if hasattr(src_vo, "ShapeColor"):
+                    dst_vo.ShapeColor = src_vo.ShapeColor
+                if hasattr(src_vo, "Transparency"):
+                    dst_vo.Transparency = src_vo.Transparency
 
         doc.recompute()
         FreeCADGui.Control.closeDialog()
@@ -414,7 +499,7 @@ class DebossLogoCommand:
 
         # --- Re-edit an existing logo deboss result ---
         if hasattr(obj, "Logo_Diameter"):
-            original = FreeCAD.ActiveDocument.getObject(obj.Logo_OriginalBody)
+            original = _get_logo_base_object(obj)
             if original is None:
                 QtWidgets.QMessageBox.warning(
                     None, "Logo Deboss",

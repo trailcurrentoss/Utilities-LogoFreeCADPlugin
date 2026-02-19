@@ -24,7 +24,29 @@ class _QRCodeProxy:
         obj.Proxy = self
 
     def execute(self, obj):
-        pass  # Shape is set manually in accept()
+        """Recompute the shape from BaseFeature (PartDesign mode)."""
+        if not hasattr(obj, "QR_URL"):
+            return
+        if not hasattr(obj, "BaseFeature") or obj.BaseFeature is None:
+            return  # Part::FeaturePython at document root — shape set in accept()
+        try:
+            from qr_emboss import apply_qr
+            base_shape = obj.BaseFeature.Shape
+            face = getattr(base_shape, obj.QR_FaceName)
+            new_shape, _module_size = apply_qr(
+                base_shape, face, obj.QR_URL,
+                size=obj.QR_Size,
+                height=obj.QR_Height,
+                emboss=obj.QR_Emboss,
+                error_correction=obj.QR_ErrorCorrection,
+                border=obj.QR_Border,
+                x_offset=getattr(obj, "QR_XOffset", 0.0),
+                y_offset=getattr(obj, "QR_YOffset", 0.0),
+            )
+            obj.Shape = new_shape
+        except Exception as e:
+            FreeCAD.Console.PrintError(
+                "QR Code recompute failed: {}\n".format(e))
 
     def __getstate__(self):
         return None
@@ -47,7 +69,7 @@ class _QRCodeViewProvider:
         if not hasattr(obj, "QR_URL"):
             return False
 
-        original = FreeCAD.ActiveDocument.getObject(obj.QR_OriginalBody)
+        original = _get_qr_base_object(obj)
         if original is None:
             QtWidgets.QMessageBox.warning(
                 None, "QR Code",
@@ -104,6 +126,72 @@ class _QRCodeViewProvider:
 
     def __setstate__(self, state):
         return None
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _find_body(obj):
+    """Return the PartDesign::Body that *obj* belongs to, or None.
+
+    Works whether *obj* is the Body itself or a feature inside it.
+    """
+    if hasattr(obj, "TypeId") and obj.TypeId == "PartDesign::Body":
+        return obj
+    if hasattr(obj, "getParentGeoFeatureGroup"):
+        parent = obj.getParentGeoFeatureGroup()
+        if (parent is not None
+                and hasattr(parent, "TypeId")
+                and parent.TypeId == "PartDesign::Body"):
+            return parent
+    return None
+
+
+def _add_qr_properties(obj):
+    """Add custom storage properties to a QRCode feature object."""
+    obj.addProperty(
+        "App::PropertyString", "QR_URL", "QR Code", "Encoded URL")
+    obj.addProperty(
+        "App::PropertyFloat", "QR_Size", "QR Code", "QR code size (mm)")
+    obj.addProperty(
+        "App::PropertyFloat", "QR_Height", "QR Code", "Height / depth (mm)")
+    obj.addProperty(
+        "App::PropertyBool", "QR_Emboss", "QR Code",
+        "True=emboss, False=deboss")
+    obj.addProperty(
+        "App::PropertyString", "QR_ErrorCorrection", "QR Code",
+        "Error correction level (L/M/Q/H)")
+    obj.addProperty(
+        "App::PropertyInteger", "QR_Border", "QR Code",
+        "Quiet-zone border (modules)")
+    obj.addProperty(
+        "App::PropertyFloat", "QR_XOffset", "QR Code",
+        "Horizontal offset from face centre (mm)")
+    obj.addProperty(
+        "App::PropertyFloat", "QR_YOffset", "QR Code",
+        "Vertical offset from face centre (mm)")
+    obj.addProperty(
+        "App::PropertyString", "QR_FaceName", "QR Code",
+        "Face used on the original body")
+    obj.addProperty(
+        "App::PropertyString", "QR_OriginalBody", "QR Code",
+        "Original body object name")
+
+
+def _get_qr_base_object(obj):
+    """Return the base object that a QRCode result was derived from.
+
+    For PartDesign features this is the BaseFeature; for document-level
+    Part objects it is looked up by the stored QR_OriginalBody name.
+    Returns None if the base cannot be found.
+    """
+    if hasattr(obj, "BaseFeature") and obj.BaseFeature is not None:
+        return obj.BaseFeature
+    orig_name = getattr(obj, "QR_OriginalBody", None)
+    if orig_name:
+        return FreeCAD.ActiveDocument.getObject(orig_name)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -375,46 +463,45 @@ class QRCodeTaskPanel:
             return False
 
         doc = FreeCAD.ActiveDocument
-
-        # If re-editing, remove the old result first
-        if self.edit_obj is not None:
-            doc.removeObject(self.edit_obj.Name)
-
-        # Create the result as a FeaturePython (enables double-click re-edit)
         label = "QRCodeEmboss" if emboss else "QRCodeDeboss"
-        result_obj = doc.addObject("Part::FeaturePython", label)
-        _QRCodeProxy(result_obj)
-        _QRCodeViewProvider(result_obj.ViewObject)
-        result_obj.Shape = new_shape
 
-        # Store parameters so the QR code can be re-edited later
-        result_obj.addProperty(
-            "App::PropertyString", "QR_URL", "QR Code", "Encoded URL")
-        result_obj.addProperty(
-            "App::PropertyFloat", "QR_Size", "QR Code", "QR code size (mm)")
-        result_obj.addProperty(
-            "App::PropertyFloat", "QR_Height", "QR Code", "Height / depth (mm)")
-        result_obj.addProperty(
-            "App::PropertyBool", "QR_Emboss", "QR Code", "True=emboss, False=deboss")
-        result_obj.addProperty(
-            "App::PropertyString", "QR_ErrorCorrection", "QR Code",
-            "Error correction level (L/M/Q/H)")
-        result_obj.addProperty(
-            "App::PropertyInteger", "QR_Border", "QR Code",
-            "Quiet-zone border (modules)")
-        result_obj.addProperty(
-            "App::PropertyFloat", "QR_XOffset", "QR Code",
-            "Horizontal offset from face centre (mm)")
-        result_obj.addProperty(
-            "App::PropertyFloat", "QR_YOffset", "QR Code",
-            "Vertical offset from face centre (mm)")
-        result_obj.addProperty(
-            "App::PropertyString", "QR_FaceName", "QR Code",
-            "Face used on the original body")
-        result_obj.addProperty(
-            "App::PropertyString", "QR_OriginalBody", "QR Code",
-            "Original body object name")
+        # Detect whether we are working inside a PartDesign::Body
+        body = _find_body(self.body_obj)
+        is_pd_edit = (self.edit_obj is not None
+                      and hasattr(self.edit_obj, "BaseFeature")
+                      and self.edit_obj.BaseFeature is not None)
 
+        if is_pd_edit:
+            # Re-editing a PartDesign feature — update in place
+            result_obj = self.edit_obj
+            result_obj.Shape = new_shape
+        elif body is not None:
+            # New operation inside a PartDesign::Body
+            prev_tip = body.Tip
+            result_obj = doc.addObject(
+                "PartDesign::FeaturePython", label)
+            _QRCodeProxy(result_obj)
+            _QRCodeViewProvider(result_obj.ViewObject)
+            _add_qr_properties(result_obj)
+            result_obj.Shape = new_shape
+            # Add to Body (sets BaseFeature & Tip automatically)
+            body.addObject(result_obj)
+            # Ensure BaseFeature links to the previous tip
+            if prev_tip is not None:
+                result_obj.BaseFeature = prev_tip
+        else:
+            # Non-PartDesign: standalone Part::FeaturePython at doc root
+            if self.edit_obj is not None:
+                doc.removeObject(self.edit_obj.Name)
+            result_obj = doc.addObject("Part::FeaturePython", label)
+            _QRCodeProxy(result_obj)
+            _QRCodeViewProvider(result_obj.ViewObject)
+            result_obj.Shape = new_shape
+            _add_qr_properties(result_obj)
+            # Hide the original so the modified version is visible
+            self.body_obj.ViewObject.Visibility = False
+
+        # Store / update parameter values
         result_obj.QR_URL = url
         result_obj.QR_Size = size
         result_obj.QR_Height = height
@@ -423,20 +510,20 @@ class QRCodeTaskPanel:
         result_obj.QR_Border = border
         result_obj.QR_XOffset = x_offset
         result_obj.QR_YOffset = y_offset
-        result_obj.QR_FaceName = self.face_name
-        result_obj.QR_OriginalBody = self.body_obj.Name
+        if not is_pd_edit:
+            result_obj.QR_FaceName = self.face_name
+            result_obj.QR_OriginalBody = (
+                body.Name if body is not None else self.body_obj.Name)
 
-        # Copy visual properties from the source
-        if hasattr(self.body_obj, "ViewObject"):
-            src_vo = self.body_obj.ViewObject
-            dst_vo = result_obj.ViewObject
-            if hasattr(src_vo, "ShapeColor"):
-                dst_vo.ShapeColor = src_vo.ShapeColor
-            if hasattr(src_vo, "Transparency"):
-                dst_vo.Transparency = src_vo.Transparency
-
-        # Hide the original body so the modified version is visible
-        self.body_obj.ViewObject.Visibility = False
+        # Copy visual properties (non-PartDesign only — Body handles its own)
+        if body is None and not is_pd_edit:
+            if hasattr(self.body_obj, "ViewObject"):
+                src_vo = self.body_obj.ViewObject
+                dst_vo = result_obj.ViewObject
+                if hasattr(src_vo, "ShapeColor"):
+                    dst_vo.ShapeColor = src_vo.ShapeColor
+                if hasattr(src_vo, "Transparency"):
+                    dst_vo.Transparency = src_vo.Transparency
 
         doc.recompute()
         FreeCADGui.Control.closeDialog()
@@ -509,7 +596,7 @@ class QRCodeCommand:
 
         # --- Re-edit an existing QR code result ---
         if hasattr(obj, "QR_URL"):
-            original = FreeCAD.ActiveDocument.getObject(obj.QR_OriginalBody)
+            original = _get_qr_base_object(obj)
             if original is None:
                 QtWidgets.QMessageBox.warning(
                     None, "QR Code",
