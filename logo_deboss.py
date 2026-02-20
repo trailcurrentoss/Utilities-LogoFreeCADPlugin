@@ -92,6 +92,7 @@ def apply_logo(
     bolt_ratio=0.15,
     x_offset=0.0,
     y_offset=0.0,
+    rotation=0.0,
 ):
     """Deboss the TrailCurrent logo onto a face of a body.
 
@@ -112,6 +113,7 @@ def apply_logo(
         bolt_ratio:     Bolt depth as fraction of total_depth (0-1).
         x_offset:   Horizontal offset from face centre in mm.
         y_offset:   Vertical offset from face centre in mm.
+        rotation:   Rotation angle on the face in degrees.
 
     Returns:
         A new Part.Shape with the logo debossed.
@@ -120,6 +122,13 @@ def apply_logo(
     # 1. Compute face coordinate frame and transformation matrix
     # ------------------------------------------------------------------
     center, u_axis, v_axis, normal = _compute_face_frame(face)
+    # Rotate the in-plane axes around the face normal
+    if rotation:
+        rad = math.radians(rotation)
+        cos_r, sin_r = math.cos(rad), math.sin(rad)
+        u_rot = u_axis * cos_r + v_axis * sin_r
+        v_rot = -u_axis * sin_r + v_axis * cos_r
+        u_axis, v_axis = u_rot, v_rot
     # Apply user-specified offset in the face plane
     placement = Vector(center)
     placement = placement + u_axis * x_offset + v_axis * y_offset

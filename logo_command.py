@@ -39,6 +39,7 @@ class _LogoDebossProxy:
                 bolt_ratio=obj.Logo_BoltPct / 100.0,
                 x_offset=getattr(obj, "Logo_XOffset", 0.0),
                 y_offset=getattr(obj, "Logo_YOffset", 0.0),
+                rotation=getattr(obj, "Logo_Rotation", 0.0),
             )
         except Exception as e:
             FreeCAD.Console.PrintError(
@@ -81,6 +82,7 @@ class _LogoDebossViewProvider:
             "bolt_pct": obj.Logo_BoltPct,
             "x_offset": obj.Logo_XOffset if hasattr(obj, "Logo_XOffset") else 0.0,
             "y_offset": obj.Logo_YOffset if hasattr(obj, "Logo_YOffset") else 0.0,
+            "rotation": getattr(obj, "Logo_Rotation", 0.0),
         }
         panel = DebossLogoTaskPanel(
             original, obj.Logo_FaceName,
@@ -166,6 +168,9 @@ def _add_logo_properties(obj):
     obj.addProperty(
         "App::PropertyFloat", "Logo_YOffset", "Logo Deboss",
         "Vertical offset from face centre (mm)")
+    obj.addProperty(
+        "App::PropertyFloat", "Logo_Rotation", "Logo Deboss",
+        "Rotation angle on the face (degrees)")
     obj.addProperty(
         "App::PropertyString", "Logo_FaceName", "Logo Deboss",
         "Face used on the original body")
@@ -263,6 +268,18 @@ class DebossLogoTaskPanel:
         )
         layout.addRow("Y Offset:", self.y_offset_spin)
 
+        # Rotation
+        self.rotation_spin = QtWidgets.QDoubleSpinBox()
+        self.rotation_spin.setRange(-180.0, 180.0)
+        self.rotation_spin.setValue(0.0)
+        self.rotation_spin.setSingleStep(5.0)
+        self.rotation_spin.setDecimals(1)
+        self.rotation_spin.setSuffix(" deg")
+        self.rotation_spin.setToolTip(
+            "Rotation angle on the face (degrees)."
+        )
+        layout.addRow("Rotation:", self.rotation_spin)
+
         # Separator
         sep = QtWidgets.QFrame()
         sep.setFrameShape(QtWidgets.QFrame.HLine)
@@ -330,6 +347,8 @@ class DebossLogoTaskPanel:
             self.x_offset_spin.setValue(p["x_offset"])
         if "y_offset" in p:
             self.y_offset_spin.setValue(p["y_offset"])
+        if "rotation" in p:
+            self.rotation_spin.setValue(p["rotation"])
 
     # -- Task panel interface ----------------------------------------------
 
@@ -348,6 +367,7 @@ class DebossLogoTaskPanel:
         bolt_ratio = self.bolt_spin.value() / 100.0
         x_offset = self.x_offset_spin.value()
         y_offset = self.y_offset_spin.value()
+        rotation = self.rotation_spin.value()
 
         try:
             new_shape = apply_logo(
@@ -360,6 +380,7 @@ class DebossLogoTaskPanel:
                 bolt_ratio=bolt_ratio,
                 x_offset=x_offset,
                 y_offset=y_offset,
+                rotation=rotation,
             )
         except Exception as e:
             FreeCAD.Console.PrintError(
@@ -418,6 +439,7 @@ class DebossLogoTaskPanel:
         result_obj.Logo_BoltPct = self.bolt_spin.value()
         result_obj.Logo_XOffset = x_offset
         result_obj.Logo_YOffset = y_offset
+        result_obj.Logo_Rotation = rotation
         if not is_pd_edit:
             result_obj.Logo_FaceName = self.face_name
             result_obj.Logo_OriginalBody = (
@@ -515,6 +537,7 @@ class DebossLogoCommand:
                 "bolt_pct": obj.Logo_BoltPct,
                 "x_offset": obj.Logo_XOffset if hasattr(obj, "Logo_XOffset") else 0.0,
                 "y_offset": obj.Logo_YOffset if hasattr(obj, "Logo_YOffset") else 0.0,
+                "rotation": getattr(obj, "Logo_Rotation", 0.0),
             }
             panel = DebossLogoTaskPanel(
                 original, obj.Logo_FaceName,
