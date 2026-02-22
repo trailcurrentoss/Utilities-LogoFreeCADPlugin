@@ -62,6 +62,12 @@ def _build_transform(center, u_axis, v_axis, normal):
     Local X → u_axis, local Y → v_axis, local Z → -normal (into body).
     Origin is placed at *center*.
     """
+    # Negating the normal to point into the body flips the handedness of
+    # the coordinate frame, which mirrors the logo.  Negate u_axis as well
+    # so the determinant stays +1 (no mirror).
+    z_dir = Vector(-normal.x, -normal.y, -normal.z)
+    u_axis = Vector(-u_axis.x, -u_axis.y, -u_axis.z)
+
     mat = Matrix()
     # Column 1: local X → u_axis
     mat.A11 = u_axis.x
@@ -71,10 +77,10 @@ def _build_transform(center, u_axis, v_axis, normal):
     mat.A12 = v_axis.x
     mat.A22 = v_axis.y
     mat.A32 = v_axis.z
-    # Column 3: local Z → -normal (into the body)
-    mat.A13 = -normal.x
-    mat.A23 = -normal.y
-    mat.A33 = -normal.z
+    # Column 3: local Z → into the body
+    mat.A13 = z_dir.x
+    mat.A23 = z_dir.y
+    mat.A33 = z_dir.z
     # Column 4: translation to face center
     mat.A14 = center.x
     mat.A24 = center.y
