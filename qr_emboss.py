@@ -74,14 +74,13 @@ def generate_qr_matrix(url, error_correction="M", border=2):
 
 def _compute_face_frame(face):
     """Return *(center, u_axis, v_axis, normal)* for a planar *face*."""
-    surface = face.Surface
-    if hasattr(surface, "Axis"):
-        normal = Vector(surface.Axis).normalize()
-    else:
-        u_min, u_max, v_min, v_max = face.ParameterRange
-        normal = face.normalAt(
-            (u_min + u_max) / 2.0, (v_min + v_max) / 2.0
-        ).normalize()
+    # Always use face.normalAt() which accounts for face orientation
+    # (Forward/Reversed).  surface.Axis gives the mathematical plane
+    # normal which can point inward on Reversed faces.
+    u_min, u_max, v_min, v_max = face.ParameterRange
+    normal = face.normalAt(
+        (u_min + u_max) / 2.0, (v_min + v_max) / 2.0
+    ).normalize()
 
     center = face.CenterOfMass
 
@@ -111,10 +110,6 @@ def _build_transform(center, u_axis, v_axis, normal, emboss=True):
         z_dir = normal
     else:
         z_dir = Vector(-normal.x, -normal.y, -normal.z)
-        # Negating normal flips the handedness of the coordinate frame,
-        # which mirrors the QR code and makes it unscannable.  Flip the
-        # u-axis as well so the determinant stays +1 (no mirror).
-        u_axis = Vector(-u_axis.x, -u_axis.y, -u_axis.z)
 
     mat = Matrix()
     mat.A11, mat.A21, mat.A31 = u_axis.x, u_axis.y, u_axis.z
@@ -259,7 +254,7 @@ def apply_qr(
     placement = Vector(center)
     placement = placement + u_axis * x_offset + v_axis * y_offset
     mat = _build_transform(placement, u_axis, v_axis, normal, emboss)
-    solid = solid.transformGeometry(mat)
+    solid = solid.transformShape(mat)
 
     # ---- boolean operation -------------------------------------------------
     result = body_shape.copy()

@@ -18,21 +18,44 @@ _EC_KEYS = ["L", "M", "Q", "H"]
 # ---------------------------------------------------------------------------
 
 class _QRCodeProxy:
-    """Data proxy for a QRCode Part::FeaturePython object."""
+    """Data proxy for a QRCode PartDesign::Feature(Additive|Subtractive)Python."""
 
     def __init__(self, obj):
         obj.Proxy = self
 
     def execute(self, obj):
-        """Recompute the shape from BaseFeature (PartDesign mode)."""
+        """Recompute the shape.
+
+        For PartDesign integration the Shape must be the cumulative solid
+        and AddSubShape the isolated tool contribution.
+        Shapes are stored in the feature's local coordinate system.
+        """
         if not hasattr(obj, "QR_URL"):
             return
-        if not hasattr(obj, "BaseFeature") or obj.BaseFeature is None:
-            return  # Part::FeaturePython at document root — shape set in accept()
+
+        if hasattr(obj, "BaseFeature") and obj.BaseFeature is not None:
+            base_shape = obj.BaseFeature.Shape
+        elif hasattr(obj, "QR_OriginalBody") and obj.QR_OriginalBody:
+            original = FreeCAD.ActiveDocument.getObject(obj.QR_OriginalBody)
+            if original is None or original.Shape.isNull():
+                return
+            base_shape = original.Shape
+        else:
+            return
+
         try:
             from qr_emboss import apply_qr
-            base_shape = obj.BaseFeature.Shape
-            face = getattr(base_shape, obj.QR_FaceName)
+            face_name = getattr(obj, "QR_FaceName", "")
+            if not face_name:
+                return
+            face_idx = int(face_name.replace("Face", "")) if face_name.startswith("Face") else -1
+            if face_idx < 1 or face_idx > len(base_shape.Faces):
+                FreeCAD.Console.PrintWarning(
+                    "QR Code: {} not found on base shape "
+                    "(has {} faces), keeping existing shape.\n"
+                    .format(face_name, len(base_shape.Faces)))
+                return
+            face = base_shape.Faces[face_idx - 1]
             new_shape, _module_size = apply_qr(
                 base_shape, face, obj.QR_URL,
                 size=obj.QR_Size,
@@ -43,7 +66,19 @@ class _QRCodeProxy:
                 x_offset=getattr(obj, "QR_XOffset", 0.0),
                 y_offset=getattr(obj, "QR_YOffset", 0.0),
             )
-            obj.Shape = new_shape
+            if new_shape and not new_shape.isNull():
+                # Transform to feature-local coordinates
+                new_shape.transformShape(
+                    obj.Placement.inverse().toMatrix(), True)
+                obj.Shape = new_shape
+                if hasattr(obj, "AddSubShape"):
+                    if getattr(obj, "QR_Emboss", True):
+                        tool = new_shape.cut(base_shape)
+                    else:
+                        tool = base_shape.cut(new_shape)
+                    tool.transformShape(
+                        obj.Placement.inverse().toMatrix(), True)
+                    obj.AddSubShape = tool
         except Exception as e:
             FreeCAD.Console.PrintError(
                 "QR Code recompute failed: {}\n".format(e))
@@ -465,58 +500,62 @@ class QRCodeTaskPanel:
         doc = FreeCAD.ActiveDocument
         label = "QRCodeEmboss" if emboss else "QRCodeDeboss"
 
-        # Detect whether we are working inside a PartDesign::Body
         body = _find_body(self.body_obj)
         is_pd_edit = (self.edit_obj is not None
-                      and hasattr(self.edit_obj, "BaseFeature")
-                      and self.edit_obj.BaseFeature is not None)
+                      and hasattr(self.edit_obj, "BaseFeature"))
 
         if is_pd_edit:
-            # Re-editing a PartDesign feature — update in place
+            # Re-editing — update properties, let recompute handle Shape.
             result_obj = self.edit_obj
-            result_obj.Shape = new_shape
+            result_obj.QR_URL = url
+            result_obj.QR_Size = size
+            result_obj.QR_Height = height
+            result_obj.QR_Emboss = emboss
+            result_obj.QR_ErrorCorrection = ec_key
+            result_obj.QR_Border = border
+            result_obj.QR_XOffset = x_offset
+            result_obj.QR_YOffset = y_offset
         elif body is not None:
-            # New operation inside a PartDesign::Body
-            prev_tip = body.Tip
-            result_obj = doc.addObject(
-                "PartDesign::FeaturePython", label)
+            # New operation inside a PartDesign::Body.
+            # Set parameter properties, then let body.addObject() set
+            # BaseFeature and doc.recompute() call execute() for Shape.
+            pd_type = ("PartDesign::FeatureAdditivePython" if emboss
+                       else "PartDesign::FeatureSubtractivePython")
+            result_obj = doc.addObject(pd_type, label)
             _QRCodeProxy(result_obj)
             _QRCodeViewProvider(result_obj.ViewObject)
             _add_qr_properties(result_obj)
-            result_obj.Shape = new_shape
-            # Add to Body (sets BaseFeature & Tip automatically)
+            result_obj.QR_URL = url
+            result_obj.QR_Size = size
+            result_obj.QR_Height = height
+            result_obj.QR_Emboss = emboss
+            result_obj.QR_ErrorCorrection = ec_key
+            result_obj.QR_Border = border
+            result_obj.QR_XOffset = x_offset
+            result_obj.QR_YOffset = y_offset
+            result_obj.QR_FaceName = self.face_name
+            result_obj.QR_OriginalBody = body.Name
+            # Do NOT set BaseFeature, Shape, or AddSubShape manually.
             body.addObject(result_obj)
-            # Ensure BaseFeature links to the previous tip
-            if prev_tip is not None:
-                result_obj.BaseFeature = prev_tip
         else:
-            # Non-PartDesign: standalone Part::FeaturePython at doc root
             if self.edit_obj is not None:
                 doc.removeObject(self.edit_obj.Name)
             result_obj = doc.addObject("Part::FeaturePython", label)
             _QRCodeProxy(result_obj)
             _QRCodeViewProvider(result_obj.ViewObject)
-            result_obj.Shape = new_shape
             _add_qr_properties(result_obj)
-            # Hide the original so the modified version is visible
-            self.body_obj.ViewObject.Visibility = False
-
-        # Store / update parameter values
-        result_obj.QR_URL = url
-        result_obj.QR_Size = size
-        result_obj.QR_Height = height
-        result_obj.QR_Emboss = emboss
-        result_obj.QR_ErrorCorrection = ec_key
-        result_obj.QR_Border = border
-        result_obj.QR_XOffset = x_offset
-        result_obj.QR_YOffset = y_offset
-        if not is_pd_edit:
+            result_obj.QR_URL = url
+            result_obj.QR_Size = size
+            result_obj.QR_Height = height
+            result_obj.QR_Emboss = emboss
+            result_obj.QR_ErrorCorrection = ec_key
+            result_obj.QR_Border = border
+            result_obj.QR_XOffset = x_offset
+            result_obj.QR_YOffset = y_offset
             result_obj.QR_FaceName = self.face_name
-            result_obj.QR_OriginalBody = (
-                body.Name if body is not None else self.body_obj.Name)
-
-        # Copy visual properties (non-PartDesign only — Body handles its own)
-        if body is None and not is_pd_edit:
+            result_obj.QR_OriginalBody = self.body_obj.Name
+            result_obj.Shape = new_shape
+            self.body_obj.ViewObject.Visibility = False
             if hasattr(self.body_obj, "ViewObject"):
                 src_vo = self.body_obj.ViewObject
                 dst_vo = result_obj.ViewObject
