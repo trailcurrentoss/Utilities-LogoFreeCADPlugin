@@ -13,6 +13,8 @@ import bmesh
 import sys
 import argparse
 import math
+import os
+import struct
 from mathutils import Vector, Matrix
 
 
@@ -109,29 +111,127 @@ def setup_render_engine(samples, res_x, res_y):
 # Model import and positioning (data-level where possible)
 # ---------------------------------------------------------------------------
 
+def _is_binary_stl(filepath):
+    """Determine whether an STL file is binary or ASCII format.
+
+    Uses file-size validation rather than checking for a 'solid' prefix,
+    because some binary STL files have headers that start with 'solid'.
+    """
+    file_size = os.path.getsize(filepath)
+    if file_size < 84:
+        return False
+    with open(filepath, 'rb') as f:
+        f.read(80)  # skip header
+        num_triangles = struct.unpack('<I', f.read(4))[0]
+    expected_size = 84 + (num_triangles * 50)
+    return file_size == expected_size
+
+
+def _read_stl_binary(filepath):
+    """Read a binary STL file. Return list of ((v1), (v2), (v3)) tuples."""
+    with open(filepath, 'rb') as f:
+        f.read(80)  # skip header
+        num_triangles = struct.unpack('<I', f.read(4))[0]
+        triangles = []
+        for _ in range(num_triangles):
+            data = f.read(50)
+            if len(data) < 50:
+                break
+            # Skip normal (12 bytes), read 3 vertices (9 floats), skip attr (2 bytes)
+            vals = struct.unpack('<12x9f2x', data)
+            v1 = (vals[0], vals[1], vals[2])
+            v2 = (vals[3], vals[4], vals[5])
+            v3 = (vals[6], vals[7], vals[8])
+            triangles.append((v1, v2, v3))
+    return triangles
+
+
+def _read_stl_ascii(filepath):
+    """Read an ASCII STL file. Return list of ((v1), (v2), (v3)) tuples."""
+    triangles = []
+    current_verts = []
+    with open(filepath, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith('vertex'):
+                parts = line.split()
+                current_verts.append((
+                    float(parts[1]), float(parts[2]), float(parts[3])
+                ))
+                if len(current_verts) == 3:
+                    triangles.append(tuple(current_verts))
+                    current_verts = []
+    return triangles
+
+
+def _import_stl_data_level(stl_path):
+    """Import an STL file using pure data-level API (no bpy.ops).
+
+    Reads both binary and ASCII STL formats.  Deduplicates vertices
+    for clean mesh topology.  Returns the created bpy.types.Object,
+    or None on failure.
+    """
+    if not os.path.isfile(stl_path):
+        print("ERROR: STL file not found: {}".format(stl_path))
+        return None
+
+    try:
+        if _is_binary_stl(stl_path):
+            triangles = _read_stl_binary(stl_path)
+        else:
+            triangles = _read_stl_ascii(stl_path)
+    except Exception as e:
+        print("ERROR: Failed to parse STL file: {}".format(e))
+        return None
+
+    if not triangles:
+        print("ERROR: STL file contains no triangles.")
+        return None
+
+    # Build mesh via bmesh with vertex deduplication
+    bm = bmesh.new()
+    vert_cache = {}
+    precision = 6
+
+    for v1_co, v2_co, v3_co in triangles:
+        face_verts = []
+        for co in (v1_co, v2_co, v3_co):
+            key = (round(co[0], precision),
+                   round(co[1], precision),
+                   round(co[2], precision))
+            if key not in vert_cache:
+                vert_cache[key] = bm.verts.new(co)
+            face_verts.append(vert_cache[key])
+
+        # Skip degenerate faces where vertices coincide after dedup
+        if (face_verts[0] == face_verts[1]
+                or face_verts[1] == face_verts[2]
+                or face_verts[0] == face_verts[2]):
+            continue
+
+        try:
+            bm.faces.new(face_verts)
+        except ValueError:
+            pass  # duplicate face — skip
+
+    mesh_name = os.path.splitext(os.path.basename(stl_path))[0]
+    mesh_data = bpy.data.meshes.new(mesh_name)
+    bm.to_mesh(mesh_data)
+    bm.free()
+    mesh_data.update()
+
+    obj = bpy.data.objects.new(mesh_name, mesh_data)
+    bpy.context.collection.objects.link(obj)
+    return obj
+
+
 def import_stl(stl_path):
     """Import the STL file and return the imported object.
 
-    The STL import operator is one of the few ops calls we must use,
-    but we identify the result by diffing bpy.data.objects before/after.
+    Uses a pure data-level STL parser (no bpy.ops) so the import works
+    reliably when Blender is launched via --python without a 3D viewport.
     """
-    existing = set(bpy.data.objects.keys())
-
-    try:
-        if hasattr(bpy.ops.wm, 'stl_import'):
-            bpy.ops.wm.stl_import(filepath=stl_path)
-        else:
-            bpy.ops.import_mesh.stl(filepath=stl_path)
-    except Exception as e:
-        print("STL import failed: {}".format(e))
-        return None
-
-    new_names = set(bpy.data.objects.keys()) - existing
-    if not new_names:
-        print("ERROR: STL import produced no new objects.")
-        return None
-
-    return bpy.data.objects[new_names.pop()]
+    return _import_stl_data_level(stl_path)
 
 
 def _get_mesh_bounds(obj):
