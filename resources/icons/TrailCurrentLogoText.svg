@@ -16,8 +16,8 @@
     <path d="M10 32 Q16 26 22 30 Q28 34 34 28 Q38 24 42 26"
           stroke="#ffffff" stroke-width="3" stroke-linecap="round" fill="none"/>
     <!-- Lightning bolt -->
-    <path d="M34 14 L38 22 L32 22 L36 32"
-          stroke="#74fe00" stroke-width="2.5" stroke-linecap="round"
+    <path d="M34 14 L39 22 L31 22 L36 32"
+          stroke="#74fe00" stroke-width="4" stroke-linecap="round"
           stroke-linejoin="round" fill="none"/>
   </g>
 

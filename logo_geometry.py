@@ -7,7 +7,7 @@ Logo elements (from trailcurrent-icon.svg, viewBox 0 0 48 48):
   - Circle:   cx=24 cy=24 r=22
   - Mountain: M6,36 L16,14 L22,22 L32,8 L42,36 Z
   - Trail:    M10,32 Q16,26 22,30 Q28,34 34,28 Q38,24 42,26  (stroke-width=3)
-  - Bolt:     M34,14 L38,22 L32,22 L36,32                     (stroke-width=2.5)
+  - Bolt:     M34,14 L39,22 L31,22 L36,32                     (stroke-width=4)
 
 All geometry is built using only FreeCAD Part APIs (no external dependencies).
 """
@@ -32,8 +32,8 @@ SVG_TRAIL_CURVES = [
 ]
 SVG_TRAIL_STROKE_WIDTH = 3.0
 
-SVG_BOLT = [(34, 14), (38, 22), (32, 22), (36, 32)]
-SVG_BOLT_STROKE_WIDTH = 2.5
+SVG_BOLT = [(34, 14), (39, 22), (31, 22), (36, 32)]
+SVG_BOLT_STROKE_WIDTH = 4.0
 
 
 # ---------------------------------------------------------------------------

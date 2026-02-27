@@ -20,9 +20,9 @@
         fill="none"/>
 
   <!-- Current/electricity accent -->
-  <path d="M34 14 L38 22 L32 22 L36 32"
+  <path d="M34 14 L39 22 L31 22 L36 32"
         stroke="#74fe00"
-        stroke-width="2.5"
+        stroke-width="4"
         stroke-linecap="round"
         stroke-linejoin="round"
         fill="none"/>
