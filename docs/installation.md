@@ -7,23 +7,23 @@ The Addon Manager is FreeCAD's built-in package manager. This is the easiest way
 ### Adding the repository
 
 1. Open FreeCAD
-2. Go to **Tools > Addon Manager**
-3. Click the **gear icon** (settings) in the top-right corner
-4. Select **Custom repositories**
-5. In the **Repository URL** field, enter:
+2. Go to **Edit > Preferences**
+3. Select **Addon Manager** in the left sidebar (under Python)
+4. Under **Custom repositories**, click the **+** (green plus) button
+5. Enter the Repository URL:
    ```
    https://github.com/trailcurrentoss/Utilities-LogoFreeCADPlugin
    ```
-6. Leave the branch field empty (defaults to `main`)
-7. Click **Add**
-8. Click **OK** to close settings
+6. Enter the Branch name: `main`
+7. Click **OK** to close Preferences
 
 ### Installing
 
-1. Back in the Addon Manager, search for **TrailCurrent Logo**
-2. Select it from the results list
-3. Click **Install**
-4. Restart FreeCAD when prompted
+1. Open **Tools > Addon Manager**
+2. Search for **Utilities-LogoFreeCADPlugin** (or scroll to the U section alphabetically)
+3. Click the entry to view details
+4. Click **Install**
+5. Restart FreeCAD when prompted
 
 ### Updating
 
