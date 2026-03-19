@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <!-- Front view of a Deutsch DTM04-4P connector -->
+  <!-- Outer housing body -->
+  <rect x="6" y="8" width="36" height="32" rx="3" ry="3"
+        fill="#5a5a5a" stroke="#333" stroke-width="1.5"/>
+  <!-- Inner cavity recess -->
+  <rect x="10" y="14" width="28" height="22" rx="2" ry="2"
+        fill="#3a3a3a" stroke="#222" stroke-width="1"/>
+  <!-- Latch tab on top -->
+  <rect x="18" y="4" width="12" height="6" rx="1.5" ry="1.5"
+        fill="#6a6a6a" stroke="#333" stroke-width="1"/>
+  <line x1="21" y1="5.5" x2="27" y2="5.5" stroke="#888" stroke-width="0.8"/>
+  <!-- 4 pin cavities in 2x2 grid -->
+  <!-- Top-left pin -->
+  <circle cx="18" cy="21" r="3.2" fill="#1a1a1a" stroke="#444" stroke-width="0.8"/>
+  <circle cx="18" cy="21" r="1.4" fill="#c0c0c0"/>
+  <!-- Top-right pin -->
+  <circle cx="30" cy="21" r="3.2" fill="#1a1a1a" stroke="#444" stroke-width="0.8"/>
+  <circle cx="30" cy="21" r="1.4" fill="#c0c0c0"/>
+  <!-- Bottom-left pin -->
+  <circle cx="18" cy="31" r="3.2" fill="#1a1a1a" stroke="#444" stroke-width="0.8"/>
+  <circle cx="18" cy="31" r="1.4" fill="#c0c0c0"/>
+  <!-- Bottom-right pin -->
+  <circle cx="30" cy="31" r="3.2" fill="#1a1a1a" stroke="#444" stroke-width="0.8"/>
+  <circle cx="30" cy="31" r="1.4" fill="#c0c0c0"/>
+  <!-- Keying notch on left side -->
+  <rect x="4" y="22" width="4" height="8" rx="1" ry="1"
+        fill="#4a4a4a" stroke="#333" stroke-width="0.8"/>
+</svg>
