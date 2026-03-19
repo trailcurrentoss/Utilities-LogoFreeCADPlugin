@@ -2,13 +2,13 @@
 
 The housing shape is stored as a BREP file bundled with the plugin.
 Its native orientation has:
-  - Y axis as the height (bottom at Y=-0.9, top at Y=40.0)
+  - Y axis along the housing length (rear attachment at Y=40, front at Y=-0.9)
   - X axis as the width (-11.5 to 11.5)
   - Z axis as the depth (-9.5 to 12.0)
 
 When placing onto a selected face, the housing is re-oriented so that:
-  - The face outward normal becomes the housing height axis (+Y)
-  - The housing bottom sits flush on the face surface
+  - The rear attachment face (Y=40) sits flush on the selected face
+  - The connector opening (front) points outward along the face normal
 """
 
 import os
@@ -20,11 +20,11 @@ import Part
 
 _plugin_dir = os.path.dirname(os.path.abspath(__file__))
 
-# The housing bottom face is at Y = -0.9 in the stored BREP.
-# We shift by +0.9 so the bottom aligns with Y=0 before transforming.
-_BOTTOM_Y_OFFSET = 0.9
+# The rear attachment face is at Y=40 in the stored BREP.
+_REAR_Y = 40.0
 
-# Center of the housing cross-section (XZ plane)
+# Center of the rear attachment face cross-section (XZ plane).
+# Rear face (Face1): center=(0, 40, 3.0), spans X(-11.5 to 11.5), Z(-9.5 to 12.0)
 _CENTER_X = 0.0
 _CENTER_Z = 1.25  # midpoint of Z range (-9.5 to 12.0)
 
@@ -104,17 +104,21 @@ def place_housing(
     placement = Vector(center)
     placement = placement + u_axis * x_offset + v_axis * y_offset
 
-    # Build transform: local X -> u_axis, local Z -> v_axis,
-    # local Y -> +normal (housing extends outward from face)
+    # Build transform matrix.
+    # The rear attachment face (Y=40) must sit on the selected face.
+    # The front/opening (Y=-0.9) must point outward along face normal.
+    # So housing -Y maps to face +normal (outward).
     mat = Matrix()
     # Column 1: housing X -> face U
     mat.A11 = u_axis.x
     mat.A21 = u_axis.y
     mat.A31 = u_axis.z
-    # Column 2: housing Y -> face normal (outward)
-    mat.A12 = normal.x
-    mat.A22 = normal.y
-    mat.A32 = normal.z
+    # Column 2: housing Y -> -normal (rear at Y=40 is on face, front
+    # at Y=-0.9 extends outward; after pre-shift Y=0 is at face surface
+    # and positive Y goes into the body, negative Y goes outward)
+    mat.A12 = -normal.x
+    mat.A22 = -normal.y
+    mat.A32 = -normal.z
     # Column 3: housing Z -> face V
     mat.A13 = v_axis.x
     mat.A23 = v_axis.y
@@ -127,10 +131,11 @@ def place_housing(
     # Load and prepare the housing shape
     housing = _load_housing_shape()
 
-    # Shift so the bottom face sits at Y=0 and center XZ at origin
+    # Shift so the rear attachment face (Y=40) sits at Y=0,
+    # and center the XZ cross-section at origin
     pre_shift = Matrix()
     pre_shift.A14 = -_CENTER_X
-    pre_shift.A24 = _BOTTOM_Y_OFFSET  # shift Y so bottom is at Y=0
+    pre_shift.A24 = -_REAR_Y  # shift Y=40 to Y=0
     pre_shift.A34 = -_CENTER_Z
     housing = housing.transformShape(pre_shift)
 
