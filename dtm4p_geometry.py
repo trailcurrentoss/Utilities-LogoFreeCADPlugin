@@ -124,12 +124,6 @@ def place_housing(
     # rear at Z=0, extends along +Z)
     housing = _load_housing_shape()
 
-    # Sink the rear face 0.1 mm into the body so the fuse has clean
-    # overlap rather than two coplanar faces meeting at a seam.
-    sink = Matrix()
-    sink.A34 = -0.1
-    housing.transformShape(sink)
-
     # Place on the face
     housing.transformShape(mat)
 
