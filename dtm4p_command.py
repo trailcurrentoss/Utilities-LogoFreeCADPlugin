@@ -53,11 +53,21 @@ class _DTM4PProxy:
                     .format(face_name, len(base_shape.Faces)))
                 return
             face = base_shape.Faces[face_idx - 1]
+
+            # Resolve edge if stored
+            edge = None
+            edge_name = getattr(obj, "DTM4P_EdgeName", "")
+            if edge_name:
+                edge_idx = int(edge_name.replace("Edge", ""))
+                if 1 <= edge_idx <= len(base_shape.Edges):
+                    edge = base_shape.Edges[edge_idx - 1]
+
             new_shape = place_housing(
                 base_shape, face,
                 x_offset=getattr(obj, "DTM4P_XOffset", 0.0),
                 y_offset=getattr(obj, "DTM4P_YOffset", 0.0),
                 rotation=getattr(obj, "DTM4P_Rotation", 0.0),
+                edge=edge,
             )
             if new_shape and not new_shape.isNull():
                 new_shape.transformShape(
@@ -105,8 +115,10 @@ class _DTM4PViewProvider:
             "y_offset": getattr(obj, "DTM4P_YOffset", 0.0),
             "rotation": getattr(obj, "DTM4P_Rotation", 0.0),
         }
+        edge_name = getattr(obj, "DTM4P_EdgeName", "")
         panel = DTM4PTaskPanel(
             original, obj.DTM4P_FaceName,
+            edge_name=edge_name,
             edit_obj=obj, prefill=prefill,
         )
         FreeCADGui.Control.showDialog(panel)
@@ -167,16 +179,19 @@ def _add_dtm4p_properties(obj):
     """Add custom storage properties to a DTM4P feature object."""
     obj.addProperty(
         "App::PropertyFloat", "DTM4P_XOffset", "DTM4P",
-        "Horizontal offset from face centre (mm)")
+        "Offset along the face U axis (mm)")
     obj.addProperty(
         "App::PropertyFloat", "DTM4P_YOffset", "DTM4P",
-        "Vertical offset from face centre (mm)")
+        "Offset along the face V axis (mm)")
     obj.addProperty(
         "App::PropertyFloat", "DTM4P_Rotation", "DTM4P",
         "Rotation angle on the face (degrees)")
     obj.addProperty(
         "App::PropertyString", "DTM4P_FaceName", "DTM4P",
         "Face used on the original body")
+    obj.addProperty(
+        "App::PropertyString", "DTM4P_EdgeName", "DTM4P",
+        "Edge used for front alignment (optional)")
     obj.addProperty(
         "App::PropertyString", "DTM4P_OriginalBody", "DTM4P",
         "Original body object name")
@@ -199,9 +214,11 @@ def _get_dtm4p_base_object(obj):
 class DTM4PTaskPanel:
     """Task panel shown in the FreeCAD sidebar when the DTM4P command is active."""
 
-    def __init__(self, body_obj, face_name, edit_obj=None, prefill=None):
+    def __init__(self, body_obj, face_name, edge_name="",
+                 edit_obj=None, prefill=None):
         self.body_obj = body_obj
         self.face_name = face_name
+        self.edge_name = edge_name
         self.edit_obj = edit_obj
         self.form = self._build_ui()
         if prefill:
@@ -225,6 +242,20 @@ class DTM4PTaskPanel:
         info.setWordWrap(True)
         layout.addRow(info)
 
+        # Edge alignment info
+        if self.edge_name:
+            edge_label = QtWidgets.QLabel(
+                "<b>Front aligned to:</b> {}".format(self.edge_name)
+            )
+            layout.addRow(edge_label)
+        else:
+            edge_label = QtWidgets.QLabel(
+                "<i>Tip: Select a Face + Edge to align the\n"
+                "housing front to the edge.</i>"
+            )
+            edge_label.setWordWrap(True)
+            layout.addRow(edge_label)
+
         sep = QtWidgets.QFrame()
         sep.setFrameShape(QtWidgets.QFrame.HLine)
         layout.addRow(sep)
@@ -235,10 +266,14 @@ class DTM4PTaskPanel:
         self.x_offset_spin.setSingleStep(1.0)
         self.x_offset_spin.setDecimals(1)
         self.x_offset_spin.setSuffix(" mm")
-        self.x_offset_spin.setToolTip(
-            "Horizontal offset from the face centre."
-        )
-        layout.addRow("X Offset:", self.x_offset_spin)
+        if self.edge_name:
+            self.x_offset_spin.setToolTip(
+                "Offset along the edge direction.")
+            layout.addRow("Along Edge:", self.x_offset_spin)
+        else:
+            self.x_offset_spin.setToolTip(
+                "Offset along the model X axis (projected onto the face).")
+            layout.addRow("X Offset:", self.x_offset_spin)
 
         self.y_offset_spin = QtWidgets.QDoubleSpinBox()
         self.y_offset_spin.setRange(-500.0, 500.0)
@@ -246,10 +281,14 @@ class DTM4PTaskPanel:
         self.y_offset_spin.setSingleStep(1.0)
         self.y_offset_spin.setDecimals(1)
         self.y_offset_spin.setSuffix(" mm")
-        self.y_offset_spin.setToolTip(
-            "Vertical offset from the face centre."
-        )
-        layout.addRow("Y Offset:", self.y_offset_spin)
+        if self.edge_name:
+            self.y_offset_spin.setToolTip(
+                "Offset perpendicular to the edge (positive = away from edge).")
+            layout.addRow("From Edge:", self.y_offset_spin)
+        else:
+            self.y_offset_spin.setToolTip(
+                "Offset along the model Y axis (projected onto the face).")
+            layout.addRow("Y Offset:", self.y_offset_spin)
 
         self.rotation_spin = QtWidgets.QDoubleSpinBox()
         self.rotation_spin.setRange(-180.0, 180.0)
@@ -283,12 +322,18 @@ class DTM4PTaskPanel:
         y_offset = self.y_offset_spin.value()
         rotation = self.rotation_spin.value()
 
+        # Resolve edge
+        edge = None
+        if self.edge_name:
+            edge = getattr(body_shape, self.edge_name, None)
+
         try:
             new_shape = place_housing(
                 body_shape, face,
                 x_offset=x_offset,
                 y_offset=y_offset,
                 rotation=rotation,
+                edge=edge,
             )
         except Exception as e:
             FreeCAD.Console.PrintError(
@@ -312,6 +357,7 @@ class DTM4PTaskPanel:
             result_obj.DTM4P_XOffset = x_offset
             result_obj.DTM4P_YOffset = y_offset
             result_obj.DTM4P_Rotation = rotation
+            result_obj.DTM4P_EdgeName = self.edge_name
         elif body is not None:
             result_obj = doc.addObject(
                 "PartDesign::FeatureAdditivePython", "DTM4P")
@@ -322,6 +368,7 @@ class DTM4PTaskPanel:
             result_obj.DTM4P_YOffset = y_offset
             result_obj.DTM4P_Rotation = rotation
             result_obj.DTM4P_FaceName = self.face_name
+            result_obj.DTM4P_EdgeName = self.edge_name
             result_obj.DTM4P_OriginalBody = body.Name
             body.addObject(result_obj)
         else:
@@ -335,6 +382,7 @@ class DTM4PTaskPanel:
             result_obj.DTM4P_YOffset = y_offset
             result_obj.DTM4P_Rotation = rotation
             result_obj.DTM4P_FaceName = self.face_name
+            result_obj.DTM4P_EdgeName = self.edge_name
             result_obj.DTM4P_OriginalBody = self.body_obj.Name
             result_obj.Shape = new_shape
             self.body_obj.ViewObject.Visibility = False
@@ -349,8 +397,9 @@ class DTM4PTaskPanel:
         doc.recompute()
         FreeCADGui.Control.closeDialog()
         FreeCAD.Console.PrintMessage(
-            "DTM4P housing placed onto {}.{}\n"
-            .format(self.body_obj.Label, self.face_name)
+            "DTM4P housing placed onto {}.{}{}\n"
+            .format(self.body_obj.Label, self.face_name,
+                    " aligned to " + self.edge_name if self.edge_name else "")
         )
         return True
 
@@ -382,6 +431,7 @@ class DTM4PCommand:
                 "DTM4P\n"
                 "Place a Deutsch DTM04-4P termination housing onto the\n"
                 "selected flat face, extending outward from the surface.\n"
+                "Select a Face + Edge to align the housing front to the edge.\n"
                 "Select an existing DTM4P result to re-edit."
             ),
         }
@@ -395,7 +445,8 @@ class DTM4PCommand:
             return True
         if not sel[0].SubElementNames:
             return False
-        return sel[0].SubElementNames[0].startswith("Face")
+        # Active if at least one Face is selected
+        return any(n.startswith("Face") for n in sel[0].SubElementNames)
 
     def Activated(self):
         sel = FreeCADGui.Selection.getSelectionEx()
@@ -404,6 +455,7 @@ class DTM4PCommand:
 
         obj = sel[0].Object
 
+        # --- Re-edit an existing DTM4P result ---
         if hasattr(obj, "DTM4P_FaceName"):
             original = _get_dtm4p_base_object(obj)
             if original is None:
@@ -417,18 +469,31 @@ class DTM4PCommand:
                 "y_offset": getattr(obj, "DTM4P_YOffset", 0.0),
                 "rotation": getattr(obj, "DTM4P_Rotation", 0.0),
             }
+            edge_name = getattr(obj, "DTM4P_EdgeName", "")
             panel = DTM4PTaskPanel(
                 original, obj.DTM4P_FaceName,
+                edge_name=edge_name,
                 edit_obj=obj, prefill=prefill,
             )
             FreeCADGui.Control.showDialog(panel)
             return
 
-        if not sel[0].SubElementNames:
+        # --- New placement: extract face and optional edge ---
+        sub_names = sel[0].SubElementNames
+        face_name = ""
+        edge_name = ""
+        for name in sub_names:
+            if name.startswith("Face") and not face_name:
+                face_name = name
+            elif name.startswith("Edge") and not edge_name:
+                edge_name = name
+
+        if not face_name:
             return
-        face_name = sel[0].SubElementNames[0]
+
         face = getattr(obj.Shape, face_name)
 
+        # Validate: face must be planar
         surface = face.Surface
         is_planar = hasattr(surface, "Axis") or isinstance(
             surface, Part.Plane
@@ -442,7 +507,7 @@ class DTM4PCommand:
             )
             return
 
-        panel = DTM4PTaskPanel(obj, face_name)
+        panel = DTM4PTaskPanel(obj, face_name, edge_name=edge_name)
         FreeCADGui.Control.showDialog(panel)
 
 
