@@ -104,21 +104,20 @@ def place_housing(
     placement = Vector(center)
     placement = placement + u_axis * x_offset + v_axis * y_offset
 
-    # Build transform matrix.
-    # The rear attachment face (Y=40) must sit on the selected face.
-    # The front/opening (Y=-0.9) must point outward along face normal.
-    # So housing -Y maps to face +normal (outward).
+    # Build transform matrix (must be a proper rotation, det=+1).
+    # After the pre-transform the housing has:
+    #   +Y pointing outward (front/opening direction)
+    #   X and Z centred at origin
+    # Map: housing +Y -> face normal, X -> U, Z -> V.
     mat = Matrix()
     # Column 1: housing X -> face U
     mat.A11 = u_axis.x
     mat.A21 = u_axis.y
     mat.A31 = u_axis.z
-    # Column 2: housing Y -> -normal (rear at Y=40 is on face, front
-    # at Y=-0.9 extends outward; after pre-shift Y=0 is at face surface
-    # and positive Y goes into the body, negative Y goes outward)
-    mat.A12 = -normal.x
-    mat.A22 = -normal.y
-    mat.A32 = -normal.z
+    # Column 2: housing Y -> face normal (outward)
+    mat.A12 = normal.x
+    mat.A22 = normal.y
+    mat.A32 = normal.z
     # Column 3: housing Z -> face V
     mat.A13 = v_axis.x
     mat.A23 = v_axis.y
@@ -131,16 +130,30 @@ def place_housing(
     # Load and prepare the housing shape
     housing = _load_housing_shape()
 
-    # Shift so the rear attachment face (Y=40) sits at Y=0,
-    # and center the XZ cross-section at origin
-    pre_shift = Matrix()
-    pre_shift.A14 = -_CENTER_X
-    pre_shift.A24 = -_REAR_Y  # shift Y=40 to Y=0
-    pre_shift.A34 = -_CENTER_Z
-    housing = housing.transformShape(pre_shift)
+    # Pre-transform: rotate 180° around X axis so the rear attachment
+    # face (Y=40) ends up at Y=0 and the front opening points in +Y.
+    # Rotation around X by 180°: (x, y, z) -> (x, -y, -z)
+    # Combined with translation to centre the shape:
+    #   x' = x - center_X
+    #   y' = -(y - REAR_Y) = REAR_Y - y    (rear face -> Y=0, front -> +Y)
+    #   z' = -(z - center_Z) = center_Z - z
+    pre = Matrix()
+    pre.A11 = 1.0                # x unchanged
+    pre.A22 = -1.0               # y negated (180° rotation around X)
+    pre.A33 = -1.0               # z negated (180° rotation around X)
+    pre.A14 = -_CENTER_X         # centre X
+    pre.A24 = _REAR_Y            # translate then negate Y
+    pre.A34 = _CENTER_Z          # translate then negate Z
+    housing.transformShape(pre)
+
+    # Sink the rear face 0.1mm into the body so the fuse has clean
+    # overlap rather than two coplanar faces meeting at a seam.
+    sink = Matrix()
+    sink.A24 = -0.1
+    housing.transformShape(sink)
 
     # Apply the face-frame transform
-    housing = housing.transformShape(mat)
+    housing.transformShape(mat)
 
     # Fuse with the body
     result = body_shape.fuse(housing)
