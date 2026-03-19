@@ -1,14 +1,16 @@
 """Load and position the TrailCurrent Termination Housing (DTM4P) geometry.
 
-The housing shape is stored as a BREP file bundled with the plugin.
-Its native orientation has:
-  - Y axis along the housing length (rear attachment at Y=40, front at Y=-0.9)
-  - X axis as the width (-11.5 to 11.5)
-  - Z axis as the depth (-9.5 to 12.0)
+The housing shape is stored as a BREP file bundled with the plugin
+in canonical orientation:
+  - Centred at the origin in the XY plane
+  - Rear attachment face at Z=0
+  - Housing extends along +Z toward the front opening (~40.9 mm)
+  - X is the width axis, Y is the depth axis
 
-When placing onto a selected face, the housing is re-oriented so that:
-  - The rear attachment face (Y=40) sits flush on the selected face
-  - The connector opening (front) points outward along the face normal
+When placing onto a selected face the housing is oriented so that:
+  - Local Z (housing length) maps to the face outward normal
+  - The rear attachment face sits flush on the selected surface
+  - The front opening points away from the body
 """
 
 import os
@@ -19,14 +21,6 @@ from FreeCAD import Vector, Matrix
 import Part
 
 _plugin_dir = os.path.dirname(os.path.abspath(__file__))
-
-# The rear attachment face is at Y=40 in the stored BREP.
-_REAR_Y = 40.0
-
-# Center of the rear attachment face cross-section (XZ plane).
-# Rear face (Face1): center=(0, 40, 3.0), spans X(-11.5 to 11.5), Z(-9.5 to 12.0)
-_CENTER_X = 0.0
-_CENTER_Z = 1.25  # midpoint of Z range (-9.5 to 12.0)
 
 
 def _load_housing_shape():
@@ -79,8 +73,9 @@ def place_housing(
 ):
     """Place the termination housing onto a face and fuse it with the body.
 
-    The housing geometry is positioned so that its bottom face sits flush
-    on the selected face surface, extending outward along the face normal.
+    The housing rear attachment face is placed flush on the selected face
+    surface, with the connector opening pointing outward along the face
+    normal.
 
     Args:
         body_shape: Part.Shape to fuse with.
@@ -104,55 +99,38 @@ def place_housing(
     placement = Vector(center)
     placement = placement + u_axis * x_offset + v_axis * y_offset
 
-    # Build transform matrix (must be a proper rotation, det=+1).
-    # After the pre-transform the housing has:
-    #   +Y pointing outward (front/opening direction)
-    #   X and Z centred at origin
-    # Map: housing +Y -> face normal, X -> U, Z -> V.
+    # Build transform: local X -> u_axis, local Y -> v_axis,
+    # local Z -> +normal (housing extends outward from face).
+    # This is a proper rotation (det = +1).
     mat = Matrix()
-    # Column 1: housing X -> face U
+    # Column 1: local X -> face U
     mat.A11 = u_axis.x
     mat.A21 = u_axis.y
     mat.A31 = u_axis.z
-    # Column 2: housing Y -> face normal (outward)
-    mat.A12 = normal.x
-    mat.A22 = normal.y
-    mat.A32 = normal.z
-    # Column 3: housing Z -> face V
-    mat.A13 = v_axis.x
-    mat.A23 = v_axis.y
-    mat.A33 = v_axis.z
-    # Column 4: translation
+    # Column 2: local Y -> face V
+    mat.A12 = v_axis.x
+    mat.A22 = v_axis.y
+    mat.A32 = v_axis.z
+    # Column 3: local Z -> face normal (outward)
+    mat.A13 = normal.x
+    mat.A23 = normal.y
+    mat.A33 = normal.z
+    # Column 4: translation to face centre (with offsets)
     mat.A14 = placement.x
     mat.A24 = placement.y
     mat.A34 = placement.z
 
-    # Load and prepare the housing shape
+    # Load the housing (already in canonical orientation: centred in XY,
+    # rear at Z=0, extends along +Z)
     housing = _load_housing_shape()
 
-    # Pre-transform: rotate 180° around X axis so the rear attachment
-    # face (Y=40) ends up at Y=0 and the front opening points in +Y.
-    # Rotation around X by 180°: (x, y, z) -> (x, -y, -z)
-    # Combined with translation to centre the shape:
-    #   x' = x - center_X
-    #   y' = -(y - REAR_Y) = REAR_Y - y    (rear face -> Y=0, front -> +Y)
-    #   z' = -(z - center_Z) = center_Z - z
-    pre = Matrix()
-    pre.A11 = 1.0                # x unchanged
-    pre.A22 = -1.0               # y negated (180° rotation around X)
-    pre.A33 = -1.0               # z negated (180° rotation around X)
-    pre.A14 = -_CENTER_X         # centre X
-    pre.A24 = _REAR_Y            # translate then negate Y
-    pre.A34 = _CENTER_Z          # translate then negate Z
-    housing.transformShape(pre)
-
-    # Sink the rear face 0.1mm into the body so the fuse has clean
+    # Sink the rear face 0.1 mm into the body so the fuse has clean
     # overlap rather than two coplanar faces meeting at a seam.
     sink = Matrix()
-    sink.A24 = -0.1
+    sink.A34 = -0.1
     housing.transformShape(sink)
 
-    # Apply the face-frame transform
+    # Place on the face
     housing.transformShape(mat)
 
     # Fuse with the body
