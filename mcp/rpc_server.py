@@ -16,7 +16,7 @@ from xmlrpc.server import SimpleXMLRPCServer
 
 import FreeCAD
 
-DEFAULT_PORT = 9876
+DEFAULT_PORT = 12785
 
 _server = None
 _server_thread = None
@@ -121,11 +121,20 @@ def start(port=DEFAULT_PORT):
 
     _init_namespace()
 
-    _server = SimpleXMLRPCServer(
-        ("127.0.0.1", port),
-        allow_none=True,
-        logRequests=False,
-    )
+    # Use allow_reuse_address so the port can be rebound after
+    # unclean shutdown without waiting for TIME_WAIT to expire.
+    SimpleXMLRPCServer.allow_reuse_address = True
+    try:
+        _server = SimpleXMLRPCServer(
+            ("127.0.0.1", port),
+            allow_none=True,
+            logRequests=False,
+        )
+    except OSError as e:
+        FreeCAD.Console.PrintError(
+            "MCP RPC server failed to start on port {}: {}\n".format(port, e)
+        )
+        return False
     _server.register_function(execute, "execute")
     _server.register_function(ping, "ping")
 

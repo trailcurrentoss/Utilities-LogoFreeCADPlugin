@@ -43,7 +43,7 @@ from mcp.server.fastmcp import FastMCP
 # ── Configuration ──────────────────────────────────────────────────
 
 RPC_HOST = os.environ.get("FREECAD_RPC_HOST", "127.0.0.1")
-RPC_PORT = int(os.environ.get("FREECAD_RPC_PORT", "9876"))
+RPC_PORT = int(os.environ.get("FREECAD_RPC_PORT", "12785"))
 RPC_URL = "http://{}:{}/RPC2".format(RPC_HOST, RPC_PORT)
 
 mcp = FastMCP(
