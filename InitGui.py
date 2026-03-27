@@ -38,11 +38,13 @@ try:
             import qr_command
             import blender_command
             import dtm4p_command
+            from mcp import rpc_command  # noqa: F401
             cmd_list = ["TrailCurrent_DebossLogo",
                         "TrailCurrent_DebossLogoText",
                         "TrailCurrent_QRCodeEmboss",
                         "TrailCurrent_DTM4P",
-                        "TrailCurrent_SendToBlender"]
+                        "TrailCurrent_SendToBlender",
+                        "TrailCurrent_MCPServer"]
             self.appendToolbar("TrailCurrent Logo", cmd_list)
             self.appendMenu("TrailCurrent", cmd_list)
 
