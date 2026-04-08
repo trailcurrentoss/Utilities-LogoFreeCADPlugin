@@ -4,8 +4,8 @@ The housing shape is stored as a BREP file bundled with the plugin
 in canonical orientation:
   - Centred at the origin in the XY plane
   - Physical bottom at Z=0
-  - Housing extends along +Z (height ~23.6 mm)
-  - X is the width axis (~44.9 mm), Y is the depth axis (~41.6 mm)
+  - Housing extends along +Z (height ~23.62 mm)
+  - X is the width axis (~44.85 mm), Y is the depth axis (~41.6 mm)
   - Front opening is at Y_min (~-20.80), rear at Y_max (~+20.80)
 
 When placing onto a selected face the housing is oriented so that:
