@@ -25,7 +25,7 @@ try:
 
     class TrailCurrentLogoWorkbench(FreeCADGui.Workbench):
         MenuText = "TrailCurrent Logo"
-        ToolTip = "Deboss the TrailCurrent brand logo, emboss QR codes, place connector housings, and send models to Blender for rendering"
+        ToolTip = "Deboss the TrailCurrent brand logo, emboss QR codes, place DTM connector housings, and send models to Blender for rendering"
         Icon = os.path.join(_plugin_dir, "resources", "icons", "TrailCurrentLogo.svg")
 
         def GetClassName(self):
@@ -38,11 +38,13 @@ try:
             import qr_command
             import blender_command
             import dtm4p_command
+            import dtm12p_command
             from mcp import rpc_command  # noqa: F401
             cmd_list = ["TrailCurrent_DebossLogo",
                         "TrailCurrent_DebossLogoText",
                         "TrailCurrent_QRCodeEmboss",
                         "TrailCurrent_DTM4P",
+                        "TrailCurrent_DTM12P",
                         "TrailCurrent_SendToBlender",
                         "TrailCurrent_MCPServer"]
             self.appendToolbar("TrailCurrent Logo", cmd_list)

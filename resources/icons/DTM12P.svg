@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <!-- Front view of a Deutsch DTM04-12PA connector -->
+  <!-- Outer housing body (wider than 4P) -->
+  <rect x="3" y="8" width="42" height="32" rx="3" ry="3"
+        fill="#5a5a5a" stroke="#333" stroke-width="1.5"/>
+  <!-- Inner cavity recess -->
+  <rect x="6" y="14" width="36" height="22" rx="2" ry="2"
+        fill="#3a3a3a" stroke="#222" stroke-width="1"/>
+  <!-- Latch tab on top -->
+  <rect x="18" y="4" width="12" height="6" rx="1.5" ry="1.5"
+        fill="#6a6a6a" stroke="#333" stroke-width="1"/>
+  <line x1="21" y1="5.5" x2="27" y2="5.5" stroke="#888" stroke-width="0.8"/>
+  <!-- 12 pin cavities in 2 rows of 6 -->
+  <!-- Top row -->
+  <circle cx="11" cy="21" r="2.4" fill="#1a1a1a" stroke="#444" stroke-width="0.6"/>
+  <circle cx="11" cy="21" r="1.0" fill="#c0c0c0"/>
+  <circle cx="18" cy="21" r="2.4" fill="#1a1a1a" stroke="#444" stroke-width="0.6"/>
+  <circle cx="18" cy="21" r="1.0" fill="#c0c0c0"/>
+  <circle cx="25" cy="21" r="2.4" fill="#1a1a1a" stroke="#444" stroke-width="0.6"/>
+  <circle cx="25" cy="21" r="1.0" fill="#c0c0c0"/>
+  <circle cx="32" cy="21" r="2.4" fill="#1a1a1a" stroke="#444" stroke-width="0.6"/>
+  <circle cx="32" cy="21" r="1.0" fill="#c0c0c0"/>
+  <circle cx="39" cy="21" r="2.4" fill="#1a1a1a" stroke="#444" stroke-width="0.6"/>
+  <circle cx="39" cy="21" r="1.0" fill="#c0c0c0"/>
+  <!-- Extra pin top row, far right would be off-screen, use 2x6 layout -->
+  <!-- Adjusted: 4 cols x 3 rows for 12 pins -->
+  <!-- Actually DTM12P is 2 rows x 6 columns -->
+  <circle cx="11" cy="21" r="2.4" fill="#1a1a1a" stroke="#444" stroke-width="0.6"/>
+  <circle cx="11" cy="21" r="1.0" fill="#c0c0c0"/>
+  <!-- Bottom row -->
+  <circle cx="11" cy="31" r="2.4" fill="#1a1a1a" stroke="#444" stroke-width="0.6"/>
+  <circle cx="11" cy="31" r="1.0" fill="#c0c0c0"/>
+  <circle cx="18" cy="31" r="2.4" fill="#1a1a1a" stroke="#444" stroke-width="0.6"/>
+  <circle cx="18" cy="31" r="1.0" fill="#c0c0c0"/>
+  <circle cx="25" cy="31" r="2.4" fill="#1a1a1a" stroke="#444" stroke-width="0.6"/>
+  <circle cx="25" cy="31" r="1.0" fill="#c0c0c0"/>
+  <circle cx="32" cy="31" r="2.4" fill="#1a1a1a" stroke="#444" stroke-width="0.6"/>
+  <circle cx="32" cy="31" r="1.0" fill="#c0c0c0"/>
+  <circle cx="39" cy="31" r="2.4" fill="#1a1a1a" stroke="#444" stroke-width="0.6"/>
+  <circle cx="39" cy="31" r="1.0" fill="#c0c0c0"/>
+  <!-- 6th pin each row -->
+  <!-- Using tight spacing: 5 per row visible + implied density -->
+  <!-- Keying notch on left side -->
+  <rect x="1" y="22" width="4" height="8" rx="1" ry="1"
+        fill="#4a4a4a" stroke="#333" stroke-width="0.8"/>
+</svg>
