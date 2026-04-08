@@ -454,9 +454,13 @@ class DTM12PCommand:
             return
 
         obj = sel[0].Object
+        sub_names = sel[0].SubElementNames
+        has_face_sub = (
+            bool(sub_names) and any(n.startswith("Face") for n in sub_names)
+        )
 
-        # --- Re-edit an existing DTM12P result ---
-        if hasattr(obj, "DTM12P_FaceName"):
+        # --- Re-edit an existing DTM12P result (only when no face is selected) ---
+        if hasattr(obj, "DTM12P_FaceName") and not has_face_sub:
             original = _get_dtm12p_base_object(obj)
             if original is None:
                 QtWidgets.QMessageBox.warning(
@@ -479,7 +483,6 @@ class DTM12PCommand:
             return
 
         # --- New placement: extract face and optional edge ---
-        sub_names = sel[0].SubElementNames
         face_name = ""
         edge_name = ""
         for name in sub_names:
