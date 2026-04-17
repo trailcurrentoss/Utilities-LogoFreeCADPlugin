@@ -37,12 +37,14 @@ try:
             import logotext_command
             import qr_command
             import blender_command
+            import dtm2p_command
             import dtm4p_command
             import dtm12p_command
             from mcp import rpc_command  # noqa: F401
             cmd_list = ["TrailCurrent_DebossLogo",
                         "TrailCurrent_DebossLogoText",
                         "TrailCurrent_QRCodeEmboss",
+                        "TrailCurrent_DTM2P",
                         "TrailCurrent_DTM4P",
                         "TrailCurrent_DTM12P",
                         "TrailCurrent_SendToBlender",
