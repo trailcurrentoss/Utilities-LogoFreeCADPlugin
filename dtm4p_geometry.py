@@ -53,6 +53,8 @@ def _compute_face_frame(face):
     normal = face.normalAt(
         (u_min + u_max) / 2.0, (v_min + v_max) / 2.0
     )
+    if face.Orientation == "Reversed":
+        normal = normal * -1.0
     center = face.CenterOfMass
 
     # Project world X onto the face plane to get U.  If world X is
@@ -89,6 +91,8 @@ def _compute_edge_frame(face, edge):
     normal = face.normalAt(
         (u_min + u_max) / 2.0, (v_min + v_max) / 2.0
     )
+    if face.Orientation == "Reversed":
+        normal = normal * -1.0
 
     # Edge tangent at midpoint
     e_first, e_last = edge.ParameterRange
