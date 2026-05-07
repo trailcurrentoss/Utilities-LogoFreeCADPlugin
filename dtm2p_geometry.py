@@ -40,7 +40,7 @@ def _load_housing_shape():
     return shape
 
 
-def _compute_face_frame(face):
+def compute_face_frame(face):
     """Compute a local coordinate frame for a planar face.
 
     U and V axes are aligned with the model's world axes (projected onto
@@ -77,15 +77,18 @@ def _compute_face_frame(face):
     return center, u_axis, v_axis, normal
 
 
-def _compute_edge_frame(face, edge):
+def compute_edge_frame(face, edge):
     """Compute a frame where the housing front aligns to *edge*.
 
     The edge tangent direction becomes the housing width axis (local X).
     The perpendicular direction on the face (pointing away from the edge
     into the face) becomes the housing depth axis (local Y).
 
-    Returns (anchor, u_axis, v_axis, normal) where *anchor* is the
-    midpoint of the edge.
+    The returned anchor is shifted so that the housing front face (at
+    local Y = _FRONT_Y) lines up with the edge — i.e. the anchor is the
+    point that local-origin should map to in world space.
+
+    Returns (anchor, u_axis, v_axis, normal).
     """
     u_min, u_max, v_min, v_max = face.ParameterRange
     normal = face.normalAt(
@@ -114,44 +117,48 @@ def _compute_edge_frame(face, edge):
         v_axis = v_axis * -1.0
         u_axis = u_axis * -1.0  # keep right-handed
 
+    # Shift anchor so the housing front (at local Y = _FRONT_Y) sits on the edge.
+    anchor = anchor + v_axis * (-_FRONT_Y)
+
     return anchor, u_axis, v_axis, normal
 
 
-def place_housing(
+# Keep underscore-prefixed names for backward compat.
+_compute_face_frame = compute_face_frame
+_compute_edge_frame = compute_edge_frame
+
+
+def place_housing_from_frame(
     body_shape,
-    face,
+    anchor,
+    u_axis,
+    v_axis,
+    normal,
     x_offset=0.0,
     y_offset=0.0,
     rotation=0.0,
-    edge=None,
 ):
-    """Place the termination housing onto a face and fuse it with the body.
+    """Place the housing using a pre-computed frame and fuse with body.
+
+    The frame is the source of truth — fully decoupled from any face/edge
+    topology, which makes placement robust to upstream geometry changes.
 
     Args:
         body_shape: Part.Shape to fuse with.
-        face:       Planar Part.Face to place the housing on.
-        x_offset:   Offset along the face U axis (mm).
-        y_offset:   Offset along the face V axis (mm).
-        rotation:   Rotation angle on the face (degrees).
-        edge:       Optional Part.Edge. When provided the housing front
-                    (opening) is aligned to this edge and positioned so
-                    the front face starts at the edge line.
+        anchor:     Anchor point in world coords (housing local origin maps here).
+        u_axis:     Unit vector for housing local X.
+        v_axis:     Unit vector for housing local Y.
+        normal:     Unit vector for housing local Z (outward from face).
+        x_offset:   Offset along u_axis (mm).
+        y_offset:   Offset along v_axis (mm).
+        rotation:   Rotation angle around normal (degrees).
 
     Returns:
         A new Part.Shape with the housing fused.
     """
-    if edge is not None:
-        center, u_axis, v_axis, normal = _compute_edge_frame(face, edge)
-        # Shift the anchor so the housing front face (at local Y = _FRONT_Y)
-        # lines up with the edge.  The anchor is already on the edge;
-        # we need to offset along v_axis so that the front face (Y_min)
-        # of the housing sits exactly at the edge line.
-        # In the transform, local Y maps to v_axis.  The front is at
-        # local Y = _FRONT_Y (negative).  To place it at the edge we
-        # shift by -_FRONT_Y along v_axis.
-        center = center + v_axis * (-_FRONT_Y)
-    else:
-        center, u_axis, v_axis, normal = _compute_face_frame(face)
+    u_axis = Vector(u_axis)
+    v_axis = Vector(v_axis)
+    normal = Vector(normal)
 
     if rotation:
         rad = math.radians(rotation)
@@ -160,11 +167,8 @@ def place_housing(
         v_rot = -u_axis * sin_r + v_axis * cos_r
         u_axis, v_axis = u_rot, v_rot
 
-    placement = Vector(center)
-    placement = placement + u_axis * x_offset + v_axis * y_offset
+    placement = Vector(anchor) + u_axis * x_offset + v_axis * y_offset
 
-    # Build transform: local X -> u_axis, local Y -> v_axis,
-    # local Z -> +normal (housing extends outward from face).
     mat = Matrix()
     mat.A11 = u_axis.x;  mat.A12 = v_axis.x;  mat.A13 = normal.x;  mat.A14 = placement.x
     mat.A21 = u_axis.y;  mat.A22 = v_axis.y;  mat.A23 = normal.y;  mat.A24 = placement.y
@@ -177,3 +181,27 @@ def place_housing(
     result = result.removeSplitter()
 
     return result
+
+
+def place_housing(
+    body_shape,
+    face,
+    x_offset=0.0,
+    y_offset=0.0,
+    rotation=0.0,
+    edge=None,
+):
+    """Place the termination housing onto a face and fuse it with the body.
+
+    Convenience wrapper that derives the frame from a face (and optional
+    edge) then delegates to place_housing_from_frame().
+    """
+    if edge is not None:
+        anchor, u_axis, v_axis, normal = compute_edge_frame(face, edge)
+    else:
+        anchor, u_axis, v_axis, normal = compute_face_frame(face)
+
+    return place_housing_from_frame(
+        body_shape, anchor, u_axis, v_axis, normal,
+        x_offset=x_offset, y_offset=y_offset, rotation=rotation,
+    )
