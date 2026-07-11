@@ -25,7 +25,7 @@ try:
 
     class TrailCurrentLogoWorkbench(FreeCADGui.Workbench):
         MenuText = "TrailCurrent Logo"
-        ToolTip = "Deboss the TrailCurrent brand logo, emboss QR codes, place DTM connector housings, and send models to Blender for rendering"
+        ToolTip = "Deboss the TrailCurrent brand logo, emboss QR codes, place DTM connector housings, send models to Blender for rendering, and send models to Bambu Studio for slicing"
         Icon = os.path.join(_plugin_dir, "resources", "icons", "TrailCurrentLogo.svg")
 
         def GetClassName(self):
@@ -37,6 +37,7 @@ try:
             import logotext_command
             import qr_command
             import blender_command
+            import bambu_command
             import dtm2p_command
             import dtm4p_command
             import dtm12p_command
@@ -48,6 +49,7 @@ try:
                         "TrailCurrent_DTM4P",
                         "TrailCurrent_DTM12P",
                         "TrailCurrent_SendToBlender",
+                        "TrailCurrent_SendToBambuStudio",
                         "TrailCurrent_MCPServer"]
             self.appendToolbar("TrailCurrent Logo", cmd_list)
             self.appendMenu("TrailCurrent", cmd_list)
