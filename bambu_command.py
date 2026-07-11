@@ -21,6 +21,10 @@ _plugin_dir = os.path.dirname(os.path.abspath(__file__))
 # Flatpak sandbox cannot read /tmp — stage under $HOME.
 _STAGE_DIR = os.path.expanduser("~/TrailCurrentPrints")
 
+# One-shot flag file so we only nag the user about Single Instance mode once.
+_HINT_FLAG = os.path.expanduser(
+    "~/.config/TrailCurrent/bambu_single_instance_hint_shown")
+
 
 # ---------------------------------------------------------------------------
 # Bambu Studio launcher discovery
@@ -89,6 +93,55 @@ def _flatpak_has_bambu():
     except (OSError, subprocess.TimeoutExpired):
         return False
     return "com.bambulab.BambuStudio" in out.stdout
+
+
+def _bambu_studio_running():
+    """Best-effort check for whether a Bambu Studio window is already open."""
+    system = platform.system()
+    try:
+        if system == "Windows":
+            out = subprocess.run(
+                ["tasklist", "/FI", "IMAGENAME eq bambu-studio.exe"],
+                capture_output=True, text=True, timeout=3, check=False,
+            )
+            return "bambu-studio.exe" in out.stdout.lower()
+        pgrep = shutil.which("pgrep")
+        if pgrep is None:
+            return False
+        out = subprocess.run(
+            [pgrep, "-f", "-i", "bambu[-_]?studio"],
+            capture_output=True, text=True, timeout=3, check=False,
+        )
+        return out.returncode == 0 and out.stdout.strip() != ""
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _maybe_show_single_instance_hint(parent=None):
+    """Show a one-time explainer about Bambu's Single Instance setting."""
+    if os.path.exists(_HINT_FLAG):
+        return
+    dlg = QtWidgets.QMessageBox(parent)
+    dlg.setIcon(QtWidgets.QMessageBox.Information)
+    dlg.setWindowTitle("Send to Bambu Studio — one-time tip")
+    dlg.setTextFormat(QtCore.Qt.RichText)
+    dlg.setText(
+        "<b>Bambu Studio is already open.</b><br><br>"
+        "By default, each Send to Bambu Studio opens a new window. "
+        "To have each part appear as a new build plate in your existing "
+        "window instead, enable <b>Single Instance</b> mode:<br><br>"
+        "&nbsp;&nbsp;Bambu Studio &rarr; <i>File &rarr; Preferences</i> "
+        "&rarr; General &rarr; check <b>Single Instance</b><br><br>"
+        "Restart Bambu Studio once after enabling. "
+        "This tip will not be shown again.")
+    dlg.setStandardButtons(QtWidgets.QMessageBox.Ok)
+    dlg.exec_()
+    try:
+        os.makedirs(os.path.dirname(_HINT_FLAG), exist_ok=True)
+        with open(_HINT_FLAG, "w") as f:
+            f.write("shown\n")
+    except OSError:
+        pass
 
 
 def _build_launch_cmd(launcher_kind, launcher, filepath):
@@ -266,7 +319,9 @@ class SendToBambuTaskPanel:
                          else "Bambu Studio")
         info = QtWidgets.QLabel(
             '<span style="color: #666; font-size: 11px;">'
-            'Will open in {} when export completes.</span>'
+            'Will open in {}. Enable <b>Single Instance</b> in Bambu '
+            'Studio &rarr; File &rarr; Preferences to add each part as a new '
+            'build plate in the same window.</span>'
             .format(launcher_desc))
         info.setAlignment(QtCore.Qt.AlignCenter)
         info.setWordWrap(True)
@@ -311,6 +366,9 @@ class SendToBambuTaskPanel:
         cmd = _build_launch_cmd(self.launcher_kind, self.launcher, filepath)
 
         FreeCADGui.Control.closeDialog()
+
+        if _bambu_studio_running():
+            _maybe_show_single_instance_hint()
 
         launched = False
         try:
