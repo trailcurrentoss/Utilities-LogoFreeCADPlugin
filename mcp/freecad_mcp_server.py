@@ -424,6 +424,443 @@ def spreadsheet_get(sheet_name: str, cell_or_alias: str = "", document: str = ""
 
 
 @mcp.tool()
+def create_sketch(
+    name: str,
+    plane: str = "XY",
+    offset: float = 0.0,
+    body: str = "",
+    document: str = "",
+) -> str:
+    """Create a Sketch attached to an origin plane, optionally inside a Body.
+
+    Attach to origin planes with an offset. Never attach to a face name like
+    "Face6" -- face numbering is unstable and re-orders when the model changes.
+
+    Args:
+        name: Name for the new sketch.
+        plane: "XY", "XZ" or "YZ".
+        offset: Distance along the plane's normal, in mm. Note the normals are
+            counterintuitive: XZ points -Y and YZ points -X, so a positive
+            offset moves in the negative world direction for those two.
+        body: Optional PartDesign Body to create the sketch inside.
+        document: Document name. Empty string for the active document.
+    """
+    return _call(textwrap.dedent("""\
+        doc = App.getDocument({doc!r}) if {doc!r} else App.ActiveDocument
+        plane_obj = doc.getObject({plane!r} + "_Plane")
+        if plane_obj is None and {body!r}:
+            b = doc.getObject({body!r})
+            plane_obj = b.getObject({plane!r} + "_Plane") if b else None
+        sk = doc.addObject("Sketcher::SketchObject", {name!r})
+        if {body!r}:
+            bd = doc.getObject({body!r})
+            if bd is not None:
+                bd.addObject(sk)
+                plane_obj = plane_obj or bd.Origin.OriginFeatures[
+                    {{"XY": 3, "XZ": 4, "YZ": 5}}[{plane!r}]]
+        if plane_obj is not None:
+            sk.AttachmentSupport = [(plane_obj, "")]
+            sk.MapMode = "FlatFace"
+            if {off!r}:
+                sk.AttachmentOffset = App.Placement(
+                    App.Vector(0, 0, {off!r}), App.Rotation())
+        doc.recompute()
+        print("created sketch", sk.Name, "on", {plane!r},
+              "offset", {off!r}, "mm")
+        print("world placement:", sk.Placement.Base)
+    """).format(name=name, plane=plane, off=offset, body=body, doc=document))
+
+
+@mcp.tool()
+def sketch_add_polyline(
+    sketch: str,
+    points: str,
+    closed: bool = True,
+    construction: bool = False,
+    document: str = "",
+) -> str:
+    """Add a polyline to a sketch, coincident-constrained at every vertex.
+
+    Args:
+        sketch: Sketch object name.
+        points: JSON list of [x, y] pairs in mm, e.g. "[[0,0],[10,0],[10,5]]".
+        closed: Close the loop back to the first point. A Pad profile must be closed.
+        construction: Mark the geometry as construction (not part of the profile).
+        document: Document name. Empty string for the active document.
+    """
+    return _call(textwrap.dedent("""\
+        import json, Part, Sketcher
+        doc = App.getDocument({doc!r}) if {doc!r} else App.ActiveDocument
+        sk = doc.getObject({sk!r})
+        pts = json.loads({pts!r})
+        base = len(sk.Geometry)
+        segs = []
+        n = len(pts)
+        last = n if {closed!r} else n - 1
+        for i in range(last):
+            a = pts[i]
+            b = pts[(i + 1) % n]
+            if abs(a[0] - b[0]) > 1e-9 or abs(a[1] - b[1]) > 1e-9:
+                segs.append(Part.LineSegment(App.Vector(a[0], a[1], 0),
+                                             App.Vector(b[0], b[1], 0)))
+        sk.addGeometry(segs, {constr!r})
+        made = len(segs)
+        for i in range(made if {closed!r} else made - 1):
+            sk.addConstraint(Sketcher.Constraint(
+                "Coincident", base + i, 2, base + (i + 1) % made, 1))
+        doc.recompute()
+        sk.solve()
+        print("added", made, "segments to", sk.Name)
+        print("geometry:", len(sk.Geometry), " constraints:", len(sk.Constraints))
+        print("open vertices (should be 0 for a closed profile):",
+              len(sk.OpenVertices) if hasattr(sk, "OpenVertices") else "n/a")
+        print("fully constrained:", sk.FullyConstrained)
+    """).format(sk=sketch, pts=points, closed=closed,
+                constr=construction, doc=document))
+
+
+@mcp.tool()
+def sketch_add_circle(
+    sketch: str,
+    x: float,
+    y: float,
+    radius: float,
+    construction: bool = False,
+    document: str = "",
+) -> str:
+    """Add a circle to a sketch. Several circles in one sketch pad or pocket together.
+
+    Args:
+        sketch: Sketch object name.
+        x: Centre X in mm.
+        y: Centre Y in mm.
+        radius: Radius in mm.
+        construction: Mark as construction geometry.
+        document: Document name. Empty string for the active document.
+    """
+    return _call(textwrap.dedent("""\
+        import Part
+        doc = App.getDocument({doc!r}) if {doc!r} else App.ActiveDocument
+        sk = doc.getObject({sk!r})
+        sk.addGeometry(Part.Circle(App.Vector({x!r}, {y!r}, 0),
+                                   App.Vector(0, 0, 1), {r!r}), {constr!r})
+        doc.recompute()
+        print("circle r={r!r} at ({x!r}, {y!r}); geometry now", len(sk.Geometry))
+    """).format(sk=sketch, x=x, y=y, r=radius, constr=construction, doc=document))
+
+
+@mcp.tool()
+def sketch_info(sketch: str, document: str = "") -> str:
+    """Report a sketch's geometry, constraints, closure and degrees of freedom.
+
+    An unclosed profile is the usual reason a Pad produces nothing. Check this
+    before padding rather than after.
+
+    Args:
+        sketch: Sketch object name.
+        document: Document name. Empty string for the active document.
+    """
+    return _call(textwrap.dedent("""\
+        doc = App.getDocument({doc!r}) if {doc!r} else App.ActiveDocument
+        sk = doc.getObject({sk!r})
+        if sk is None:
+            print("ERROR: no sketch named", {sk!r})
+        else:
+            sk.solve()
+            bb = sk.Shape.BoundBox
+            print("sketch          :", sk.Name)
+            print("geometry        :", len(sk.Geometry))
+            print("constraints     :", len(sk.Constraints))
+            print("fully constrained:", sk.FullyConstrained)
+            try:
+                print("open vertices   :", len(sk.OpenVertices))
+            except Exception:
+                pass
+            print("wires / faces   :", len(sk.Shape.Wires), "/", len(sk.Shape.Faces))
+            print("bbox            : {{:.4f}} x {{:.4f}} mm".format(
+                bb.XLength, bb.YLength))
+            closed = all(w.isClosed() for w in sk.Shape.Wires) if sk.Shape.Wires else False
+            print("all wires closed:", closed,
+                  "" if closed else "  <-- a Pad will fail or produce nothing")
+    """).format(sk=sketch, doc=document))
+
+
+@mcp.tool()
+def partdesign_feature(
+    body: str,
+    sketch: str,
+    kind: str = "pad",
+    length: float = 10.0,
+    reversed_dir: bool = False,
+    midplane: bool = False,
+    through_all: bool = False,
+    document: str = "",
+) -> str:
+    """Add a PartDesign Pad or Pocket to a Body from a sketch.
+
+    Use this rather than Part booleans. PartDesign builds an editable feature
+    tree; Part::Cut/Fuse build a dependency graph that is fragile to modify.
+
+    A sketch drawn on the body's outer surface almost always needs
+    reversed_dir=True for a Pocket, or it cuts away from the material.
+
+    Args:
+        body: PartDesign Body name.
+        sketch: Profile sketch name.
+        kind: "pad" or "pocket".
+        length: Depth in mm. Bind it to a spreadsheet alias afterwards with
+            set_expression to keep the model parametric.
+        reversed_dir: Reverse the feature direction.
+        midplane: Extrude symmetrically about the sketch plane.
+        through_all: Pocket only -- cut through everything.
+        document: Document name. Empty string for the active document.
+    """
+    return _call(textwrap.dedent("""\
+        doc = App.getDocument({doc!r}) if {doc!r} else App.ActiveDocument
+        bd = doc.getObject({body!r})
+        sk = doc.getObject({sk!r})
+        if bd is None or sk is None:
+            print("ERROR: missing body or sketch", {body!r}, {sk!r})
+        else:
+            tid = "PartDesign::Pad" if {kind!r} == "pad" else "PartDesign::Pocket"
+            f = doc.addObject(tid, {kind!r} + "_" + sk.Name)
+            bd.addObject(f)
+            f.Profile = sk
+            f.Length = {length!r}
+            f.Reversed = {rev!r}
+            f.Midplane = {mid!r}
+            if {kind!r} == "pocket" and {through!r}:
+                f.Type = 1
+            doc.recompute()
+            ok = bd.Shape is not None and not bd.Shape.isNull() and bd.Shape.Solids
+            print("created", f.Name, "on", bd.Name)
+            bad = [t for t in f.State if t in ("Invalid", "Error")]
+            print("body is a solid:", bool(ok), " valid:", f.isValid(),
+                  (" STATE: " + ",".join(bad)) if bad else "")
+            if ok:
+                b = bd.Shape.BoundBox
+                print("body bbox: {{:.4f}} x {{:.4f}} x {{:.4f}} mm".format(
+                    b.XLength, b.YLength, b.ZLength))
+    """).format(body=body, sk=sketch, kind=kind, length=length,
+                rev=reversed_dir, mid=midplane, through=through_all, doc=document))
+
+
+@mcp.tool()
+def partdesign_pattern(
+    body: str,
+    feature: str,
+    kind: str = "linear",
+    count: int = 2,
+    length: float = 50.0,
+    direction: str = "X",
+    document: str = "",
+) -> str:
+    """Repeat a PartDesign feature with a pattern instead of a Python loop.
+
+    A loop that creates N independent bodies is not the same thing: a pattern
+    stays parametric, so changing the count or spacing updates every instance.
+
+    Args:
+        body: PartDesign Body name.
+        feature: Feature to repeat (e.g. "pocket_Sketch001").
+        kind: "linear", "polar" or "mirrored".
+        count: Number of instances including the original.
+        length: Total span for linear, or angle in degrees for polar.
+        direction: "X", "Y" or "Z" -- the pattern axis, or the mirror plane normal.
+        document: Document name. Empty string for the active document.
+    """
+    return _call(textwrap.dedent("""\
+        doc = App.getDocument({doc!r}) if {doc!r} else App.ActiveDocument
+        bd = doc.getObject({body!r})
+        ft = doc.getObject({feat!r})
+        axis_map = {{"X": "X_Axis", "Y": "Y_Axis", "Z": "Z_Axis"}}
+        plane_map = {{"X": "YZ_Plane", "Y": "XZ_Plane", "Z": "XY_Plane"}}
+        if bd is None or ft is None:
+            print("ERROR: missing body or feature")
+        else:
+            if {kind!r} == "mirrored":
+                p = doc.addObject("PartDesign::Mirrored", "Mirrored")
+                bd.addObject(p)
+                p.Originals = [ft]
+                p.MirrorPlane = (bd.getObject(plane_map[{dirn!r}]), [""])
+            elif {kind!r} == "polar":
+                p = doc.addObject("PartDesign::PolarPattern", "PolarPattern")
+                bd.addObject(p)
+                p.Originals = [ft]
+                p.Axis = (bd.getObject(axis_map[{dirn!r}]), [""])
+                p.Angle = {length!r}
+                p.Occurrences = {count!r}
+            else:
+                p = doc.addObject("PartDesign::LinearPattern", "LinearPattern")
+                bd.addObject(p)
+                p.Originals = [ft]
+                p.Direction = (bd.getObject(axis_map[{dirn!r}]), [""])
+                p.Length = {length!r}
+                p.Occurrences = {count!r}
+            doc.recompute()
+            print("created", p.Name, "-", {kind!r}, "x", {count!r},
+                  "along", {dirn!r})
+            bad = [t for t in p.State if t in ("Invalid", "Error")]
+            print("valid:", p.isValid(),
+                  (" STATE: " + ",".join(bad)) if bad else "")
+            if bd.Shape and not bd.Shape.isNull():
+                b = bd.Shape.BoundBox
+                print("body bbox: {{:.4f}} x {{:.4f}} x {{:.4f}} mm".format(
+                    b.XLength, b.YLength, b.ZLength))
+    """).format(body=body, feat=feature, kind=kind, count=count,
+                length=length, dirn=direction, doc=document))
+
+
+@mcp.tool()
+def set_placement(
+    object_name: str,
+    x: float = 0.0,
+    y: float = 0.0,
+    z: float = 0.0,
+    axis_x: float = 0.0,
+    axis_y: float = 0.0,
+    axis_z: float = 1.0,
+    angle: float = 0.0,
+    document: str = "",
+) -> str:
+    """Position and rotate an object, then report where it actually ended up.
+
+    Rotation composition is easy to get wrong and the error is invisible in the
+    numbers, so this echoes the resulting bounding box. Check it against what
+    you expected rather than trusting the placement you passed in.
+
+    For an App::Link this sets LinkPlacement, which is what actually moves the
+    instance.
+
+    Args:
+        object_name: Object to place.
+        x: Position X in mm.
+        y: Position Y in mm.
+        z: Position Z in mm.
+        axis_x: Rotation axis X component.
+        axis_y: Rotation axis Y component.
+        axis_z: Rotation axis Z component.
+        angle: Rotation angle in degrees.
+        document: Document name. Empty string for the active document.
+    """
+    return _call(textwrap.dedent("""\
+        doc = App.getDocument({doc!r}) if {doc!r} else App.ActiveDocument
+        o = doc.getObject({name!r})
+        if o is None:
+            print("ERROR: no object named", {name!r})
+        else:
+            plc = App.Placement(
+                App.Vector({x!r}, {y!r}, {z!r}),
+                App.Rotation(App.Vector({ax!r}, {ay!r}, {az!r}), {ang!r}))
+            if o.TypeId == "App::Link":
+                o.LinkPlacement = plc
+            else:
+                o.Placement = plc
+            doc.recompute()
+            if o.TypeId == "App::Link":
+                b = o.LinkedObject.Shape
+                s = b.copy()
+                s.Placement = o.LinkPlacement.multiply(b.Placement)
+            else:
+                s = getattr(o, "Shape", None)
+            print("placed", o.Name, "at", plc.Base, "rot", {ang!r}, "deg")
+            if s is not None and not s.isNull():
+                bb = s.BoundBox
+                print("resulting bbox: X {{:.4f}}..{{:.4f}}  Y {{:.4f}}..{{:.4f}}  Z {{:.4f}}..{{:.4f}} mm".format(
+                    bb.XMin, bb.XMax, bb.YMin, bb.YMax, bb.ZMin, bb.ZMax))
+    """).format(name=object_name, x=x, y=y, z=z, ax=axis_x, ay=axis_y,
+                az=axis_z, ang=angle, doc=document))
+
+
+@mcp.tool()
+def create_assembly(name: str = "Assembly", document: str = "") -> str:
+    """Create an Assembly container (falls back to App::Part if unavailable).
+
+    Args:
+        name: Name for the assembly.
+        document: Document name. Empty string for the active document.
+    """
+    return _call(textwrap.dedent("""\
+        doc = App.getDocument({doc!r}) if {doc!r} else App.ActiveDocument
+        try:
+            a = doc.addObject("Assembly::AssemblyObject", {name!r})
+            kind = "Assembly::AssemblyObject"
+        except Exception:
+            a = doc.addObject("App::Part", {name!r})
+            kind = "App::Part"
+        doc.recompute()
+        print("created", a.Name, "as", kind)
+    """).format(name=name, doc=document))
+
+
+@mcp.tool()
+def add_link(
+    assembly: str,
+    source: str,
+    name: str = "",
+    document: str = "",
+) -> str:
+    """Add an App::Link instance of an object into an assembly.
+
+    Links let one Body appear many times without duplicating geometry. Position
+    each instance afterwards with set_placement.
+
+    Note: a Link renders nothing if its source Body's Tip is hidden -- use
+    set_visibility rather than setting Visibility by hand.
+
+    Args:
+        assembly: Assembly or App::Part container name.
+        source: Object to instance (usually a PartDesign Body).
+        name: Optional name for the link.
+        document: Document name. Empty string for the active document.
+    """
+    return _call(textwrap.dedent("""\
+        doc = App.getDocument({doc!r}) if {doc!r} else App.ActiveDocument
+        asm = doc.getObject({asm!r})
+        src = doc.getObject({src!r})
+        if asm is None or src is None:
+            print("ERROR: missing assembly or source", {asm!r}, {src!r})
+        else:
+            l = doc.addObject("App::Link", {name!r} or ("L_" + src.Name))
+            l.LinkedObject = src
+            asm.addObject(l)
+            doc.recompute()
+            print("linked", src.Name, "into", asm.Name, "as", l.Name)
+            print("children now:", len(asm.Group) if hasattr(asm, "Group") else "?")
+    """).format(asm=assembly, src=source, name=name, doc=document))
+
+
+@mcp.tool()
+def transaction(action: str, name: str = "MCP edit", document: str = "") -> str:
+    """Open, commit or roll back an undo transaction around a multi-step build.
+
+    Without this a failure halfway through leaves a half-built document with no
+    way back. Open before a batch, commit on success, abort on failure.
+
+    Args:
+        action: "begin", "commit" or "abort".
+        name: Label shown in the undo stack.
+        document: Document name. Empty string for the active document.
+    """
+    return _call(textwrap.dedent("""\
+        doc = App.getDocument({doc!r}) if {doc!r} else App.ActiveDocument
+        act = {act!r}
+        if act == "begin":
+            doc.openTransaction({name!r})
+            print("transaction opened:", {name!r})
+        elif act == "commit":
+            doc.commitTransaction()
+            print("transaction committed")
+        elif act == "abort":
+            doc.abortTransaction()
+            doc.recompute()
+            print("transaction rolled back; objects now:", len(doc.Objects))
+        else:
+            print("ERROR: action must be begin, commit or abort")
+    """).format(act=action, name=name, doc=document))
+
+
+@mcp.tool()
 def create_document(name: str = "Unnamed") -> str:
     """Create a new empty FreeCAD document.
 
@@ -791,7 +1228,8 @@ def get_errors(document: str = "") -> str:
         doc = App.getDocument({doc!r}) if {doc!r} else App.ActiveDocument
         bad, touched, nullshape = [], [], []
         for o in doc.Objects:
-            if o.isError():
+            st = list(o.State)
+            if [t for t in st if t in ("Invalid", "Error")] or not o.isValid():
                 bad.append(o.Name)
             if o.State and "Touched" in o.State:
                 touched.append(o.Name)
@@ -853,14 +1291,19 @@ def export_dxf(
             return getattr(o, "Shape", None)
 
         segs = []
+        fell_back = 0
         for o in objs:
             sh = shape_of(o)
             if sh is None or sh.isNull():
                 continue
             for e in sh.Edges:
+                # NOTE: the keyword is Deflection. "Deviation" raises
+                # Part.OCCError, and a silent fallback would emit every arc as a
+                # single chord -- straight lines look fine, curves come out wrong.
                 try:
-                    pts = e.discretize(Deviation={dev!r} * scale)
+                    pts = e.discretize(Deflection={dev!r} * scale)
                 except Exception:
+                    fell_back += 1
                     pts = [e.Vertexes[0].Point, e.Vertexes[-1].Point] \\
                           if len(e.Vertexes) >= 2 else []
                 for i in range(len(pts) - 1):
@@ -892,6 +1335,10 @@ def export_dxf(
             print("  {{}} LINE entities from {{}} object(s)".format(len(segs), len(objs)))
             print("  extents {{:.4f}} x {{:.4f}} {{}}".format(
                 max(xs) - min(xs), max(ys) - min(ys), {units!r}))
+            if fell_back:
+                print("  WARNING: {{}} edge(s) could not be discretised and were "
+                      "emitted as a single straight chord. Any curve among them "
+                      "is WRONG in this file.".format(fell_back))
     """).format(names=object_names, path=file_path, units=units,
                 dev=deviation, doc=document))
 
