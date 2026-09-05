@@ -75,6 +75,26 @@ def _rpc():
     return xmlrpc.client.ServerProxy(RPC_URL, allow_none=True)
 
 
+def _format(result: dict) -> str:
+    """Render an RPC result dict as text."""
+    parts = []
+    if result.get("stdout"):
+        parts.append(result["stdout"].rstrip())
+    if result.get("result"):
+        parts.append(result["result"])
+    if result.get("stderr"):
+        parts.append("[stderr]\n" + result["stderr"].rstrip())
+    if result.get("error"):
+        parts.append("[error]\n" + result["error"].rstrip())
+    if result.get("dialogs"):
+        # A prompt was answered automatically. The operation may have taken a
+        # default branch it would not have taken interactively, so say so
+        # loudly rather than letting it look like a clean success.
+        parts.append("[dialogs auto-dismissed -- the answer below was assumed]\n  "
+                     + "\n  ".join(result["dialogs"]))
+    return "\n".join(parts) if parts else "(no output)"
+
+
 def _call(code: str) -> str:
     """Execute code in FreeCAD and return formatted output."""
     try:
@@ -89,17 +109,7 @@ def _call(code: str) -> str:
     except Exception as e:
         return "ERROR: RPC call failed: {}".format(e)
 
-    parts = []
-    if result.get("stdout"):
-        parts.append(result["stdout"].rstrip())
-    if result.get("result"):
-        parts.append(result["result"])
-    if result.get("stderr"):
-        parts.append("[stderr]\n" + result["stderr"].rstrip())
-    if result.get("error"):
-        parts.append("[error]\n" + result["error"].rstrip())
-
-    return "\n".join(parts) if parts else "(no output)"
+    return _format(result)
 
 
 # ── Tools ──────────────────────────────────────────────────────────
@@ -482,19 +492,33 @@ def capture_screenshot(
     file_path: str,
     width: int = 1920,
     height: int = 1080,
+    method: str = "auto",
 ) -> str:
     """Capture a screenshot of the current FreeCAD 3D view.
 
+    The image is checked for content before returning. A blank screenshot
+    otherwise reads as success, and the caller carries on believing it saw
+    the model. When the image is empty this retries with an on-screen grab
+    and, if that is empty too, says the scene has nothing visible in it.
+
     Args:
         file_path: Where to save the image (e.g. "/tmp/freecad_view.png").
-        width: Image width in pixels.
+        width: Image width in pixels (offscreen only; a widget grab uses the
+            viewport's own size).
         height: Image height in pixels.
+        method: "auto", "offscreen", or "widget".
     """
-    return _call(textwrap.dedent("""\
-        view = Gui.ActiveDocument.ActiveView
-        view.saveImage({path!r}, {w}, {h}, "Current")
-        print("Screenshot saved to", {path!r})
-    """).format(path=file_path, w=width, h=height))
+    try:
+        result = _rpc().screenshot(file_path, width, height, "Current", method)
+    except Exception as e:  # server too old to expose screenshot()
+        return _call(textwrap.dedent("""\
+            view = Gui.ActiveDocument.ActiveView
+            view.saveImage({path!r}, {w}, {h}, "Current")
+            print("Screenshot saved to", {path!r})
+            print("NOTE: reload the FreeCAD MCP workbench to enable "
+                  "blank-render detection ({err})")
+        """).format(path=file_path, w=width, h=height, err=e))
+    return _format(result)
 
 
 @mcp.tool()
