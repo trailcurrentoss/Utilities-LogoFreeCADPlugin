@@ -299,6 +299,131 @@ def set_object_property(
 
 
 @mcp.tool()
+def set_expression(
+    object_name: str,
+    property_name: str,
+    expression: str,
+    document: str = "",
+) -> str:
+    """Bind an object property to a FreeCAD expression so it recomputes itself.
+
+    PREFER THIS OVER WRITING A LITERAL VALUE. A property set to a number is dead
+    geometry -- only whoever ran the script can change it. A property bound to an
+    expression is driven by the model, and the user can edit it in the GUI.
+
+    Typical use is driving dimensions from a spreadsheet alias:
+        set_expression("pad_Rib01", "Length", "Design.thickness")
+        set_expression("Pocket", "Length", "Design.wall * 2")
+
+    Args:
+        object_name: Object whose property to bind (e.g. "pad_Rib01").
+        property_name: Property to drive (e.g. "Length", "Radius", "Angle").
+        expression: FreeCAD expression, e.g. "Design.thickness" or "Box.Height / 2".
+        document: Document name. Empty string for the active document.
+    """
+    return _call(textwrap.dedent("""\
+        doc = App.getDocument({doc!r}) if {doc!r} else App.ActiveDocument
+        obj = doc.getObject({name!r})
+        if obj is None:
+            print("ERROR: no object named", {name!r})
+        else:
+            obj.setExpression({prop!r}, {expr!r})
+            doc.recompute()
+            print("bound", {name!r} + "." + {prop!r}, "->", {expr!r})
+            print("value now:", getattr(obj, {prop!r}, "?"))
+    """).format(name=object_name, prop=property_name, expr=expression, doc=document))
+
+
+@mcp.tool()
+def clear_expression(object_name: str, property_name: str, document: str = "") -> str:
+    """Remove an expression binding, leaving the property at its current value.
+
+    Args:
+        object_name: Object to unbind.
+        property_name: Property to release.
+        document: Document name. Empty string for the active document.
+    """
+    return _call(textwrap.dedent("""\
+        doc = App.getDocument({doc!r}) if {doc!r} else App.ActiveDocument
+        obj = doc.getObject({name!r})
+        obj.setExpression({prop!r}, None)
+        doc.recompute()
+        print("cleared expression on", {name!r} + "." + {prop!r})
+    """).format(name=object_name, prop=property_name, doc=document))
+
+
+@mcp.tool()
+def spreadsheet_set(
+    sheet_name: str,
+    cell: str,
+    value: str,
+    alias: str = "",
+    document: str = "",
+) -> str:
+    """Write a cell in a Spreadsheet, optionally giving it an alias.
+
+    A Spreadsheet of aliased inputs is FreeCAD's native place for design
+    parameters. Put the inputs there and bind geometry to them with
+    set_expression, instead of baking numbers into the objects.
+
+    Values carry units: "19.05 mm", "3 in". Formulas start with "=" and may
+    reference other aliases: "=rail_wing + extra_roll".
+
+    Args:
+        sheet_name: Spreadsheet object name. Created if it does not exist.
+        cell: Cell address, e.g. "B4".
+        value: Cell content -- a quantity, a number, text, or an "=" formula.
+        alias: Optional alias for the cell, making it referenceable by name.
+        document: Document name. Empty string for the active document.
+    """
+    return _call(textwrap.dedent("""\
+        doc = App.getDocument({doc!r}) if {doc!r} else App.ActiveDocument
+        sh = doc.getObject({sheet!r})
+        if sh is None:
+            sh = doc.addObject("Spreadsheet::Sheet", {sheet!r})
+            print("created spreadsheet", {sheet!r})
+        sh.set({cell!r}, {value!r})
+        if {alias!r}:
+            sh.setAlias({cell!r}, {alias!r})
+        doc.recompute()
+        print({cell!r}, "=", {value!r}, ("alias " + {alias!r}) if {alias!r} else "")
+        if {alias!r}:
+            print("resolves to:", sh.get({alias!r}))
+    """).format(sheet=sheet_name, cell=cell, value=value, alias=alias, doc=document))
+
+
+@mcp.tool()
+def spreadsheet_get(sheet_name: str, cell_or_alias: str = "", document: str = "") -> str:
+    """Read a spreadsheet cell or alias, or list every alias if none is given.
+
+    Args:
+        sheet_name: Spreadsheet object name.
+        cell_or_alias: Cell address or alias. Empty lists all aliases.
+        document: Document name. Empty string for the active document.
+    """
+    return _call(textwrap.dedent("""\
+        doc = App.getDocument({doc!r}) if {doc!r} else App.ActiveDocument
+        sh = doc.getObject({sheet!r})
+        if sh is None:
+            print("ERROR: no spreadsheet named", {sheet!r})
+        elif {key!r}:
+            print({key!r}, "=", sh.get({key!r}))
+        else:
+            props = [p for p in sh.PropertiesList if sh.getTypeIdOfProperty(p) != "App::PropertyString"]
+            found = 0
+            for p in sh.PropertiesList:
+                try:
+                    v = sh.get(p)
+                except Exception:
+                    continue
+                print("  {{:<14s}} {{}}".format(p, v))
+                found += 1
+            if not found:
+                print("(no aliases defined)")
+    """).format(sheet=sheet_name, key=cell_or_alias, doc=document))
+
+
+@mcp.tool()
 def create_document(name: str = "Unnamed") -> str:
     """Create a new empty FreeCAD document.
 
@@ -485,6 +610,290 @@ def export_object(
                     _Part.export(shapes, {path!r})
                     print("Exported", len(shapes), "shape(s) to", {path!r})
     """).format(names=object_names, path=file_path, doc=document))
+
+
+@mcp.tool()
+def set_visibility(
+    object_names: str,
+    visible: bool = True,
+    document: str = "",
+) -> str:
+    """Show or hide objects, handling the cases that silently render nothing.
+
+    Visibility in FreeCAD is not one flag. Three traps make a model vanish while
+    every object still reports Visibility=True, and all three are handled here:
+
+      * PartDesign: the Body's Tip feature is what draws, not the Body.
+      * App::Link: renders nothing when its source Body's Tip is hidden.
+      * Assembly / App::Part containers: hiding one hides every child.
+
+    Args:
+        object_names: Comma-separated names, or "*" for everything.
+        visible: True to show, False to hide.
+        document: Document name. Empty string for the active document.
+    """
+    return _call(textwrap.dedent("""\
+        doc = App.getDocument({doc!r}) if {doc!r} else App.ActiveDocument
+        names = {names!r}
+        objs = doc.Objects if names.strip() == "*" else [
+            doc.getObject(n.strip()) for n in names.split(",") if n.strip()]
+        vis = {vis!r}
+        done = 0
+        for o in objs:
+            if o is None:
+                continue
+            try:
+                o.ViewObject.Visibility = vis
+                done += 1
+            except Exception:
+                continue
+            # a Body draws through its Tip feature
+            if o.TypeId == "PartDesign::Body" and getattr(o, "Tip", None) is not None:
+                try:
+                    o.Tip.ViewObject.Visibility = True
+                except Exception:
+                    pass
+            # a Link draws through its source Body's Tip
+            if o.TypeId == "App::Link":
+                src = getattr(o, "LinkedObject", None)
+                if src is not None and getattr(src, "Tip", None) is not None:
+                    try:
+                        src.Tip.ViewObject.Visibility = True
+                    except Exception:
+                        pass
+        doc.recompute()
+        print("set Visibility=" + str(vis), "on", done, "object(s)")
+        shown = [o.Name for o in doc.Objects
+                 if getattr(getattr(o, "ViewObject", None), "Visibility", False)]
+        print("visible now:", len(shown))
+    """).format(names=object_names, vis=visible, doc=document))
+
+
+@mcp.tool()
+def measure(
+    object_a: str,
+    object_b: str = "",
+    document: str = "",
+) -> str:
+    """Measure an object, or the distance and overlap between two.
+
+    Use this to VERIFY a model rather than trusting that it built correctly.
+    With one object you get its bounding box; with two you additionally get the
+    minimum distance between them and their intersection volume.
+
+    An intersection volume above zero on parts that should merely touch means
+    they interfere. A distance above zero on parts that should mate means a gap.
+
+    Args:
+        object_a: First object name.
+        object_b: Optional second object name.
+        document: Document name. Empty string for the active document.
+    """
+    return _call(textwrap.dedent("""\
+        IN = 25.4
+        doc = App.getDocument({doc!r}) if {doc!r} else App.ActiveDocument
+        def shape_of(o):
+            if o.TypeId == "App::Link":
+                b = o.LinkedObject.Shape
+                s = b.copy()
+                s.Placement = o.LinkPlacement.multiply(b.Placement)
+                return s
+            return o.Shape
+        a = doc.getObject({a!r})
+        if a is None:
+            print("ERROR: no object named", {a!r})
+        else:
+            sa = shape_of(a); bb = sa.BoundBox
+            print("{{}}: {{:.4f}} x {{:.4f}} x {{:.4f}} mm  ({{:.4f}} x {{:.4f}} x {{:.4f}} in)".format(
+                a.Name, bb.XLength, bb.YLength, bb.ZLength,
+                bb.XLength/IN, bb.YLength/IN, bb.ZLength/IN))
+            print("  origin ({{:.4f}}, {{:.4f}}, {{:.4f}}) mm   volume {{:.3f}} in3".format(
+                bb.XMin, bb.YMin, bb.ZMin, sa.Volume/IN**3))
+            if {b!r}:
+                bo = doc.getObject({b!r})
+                if bo is None:
+                    print("ERROR: no object named", {b!r})
+                else:
+                    sb = shape_of(bo)
+                    dist = sa.distToShape(sb)[0]
+                    common = sa.common(sb).Volume
+                    print("  distance to {{}}: {{:.6f}} mm ({{:.6f}} in)".format(
+                        bo.Name, dist, dist/IN))
+                    print("  intersection   : {{:.6f}} mm3 ({{:.6f}} in3){{}}".format(
+                        common, common/IN**3, "  <-- INTERFERENCE" if common > 1e-3 else ""))
+    """).format(a=object_a, b=object_b, doc=document))
+
+
+@mcp.tool()
+def check_interference(object_names: str = "*", document: str = "") -> str:
+    """Pairwise interference check across many objects.
+
+    Reports every pair whose solids actually overlap. Bounding boxes are used to
+    skip non-touching pairs, so this stays usable on assemblies with dozens of
+    parts. Run it before believing an assembly is correct -- coincident
+    placement numbers do not prove the solids mate.
+
+    Args:
+        object_names: Comma-separated names, or "*" for all links and solids.
+        document: Document name. Empty string for the active document.
+    """
+    return _call(textwrap.dedent("""\
+        IN = 25.4
+        doc = App.getDocument({doc!r}) if {doc!r} else App.ActiveDocument
+        names = {names!r}
+        if names.strip() == "*":
+            objs = [o for o in doc.Objects
+                    if o.TypeId == "App::Link" or
+                    (hasattr(o, "Shape") and o.Shape and o.Shape.Solids)]
+        else:
+            objs = [doc.getObject(n.strip()) for n in names.split(",") if n.strip()]
+        def shape_of(o):
+            if o.TypeId == "App::Link":
+                b = o.LinkedObject.Shape
+                s = b.copy()
+                s.Placement = o.LinkPlacement.multiply(b.Placement)
+                return s
+            return o.Shape
+        shp = [(o.Name, shape_of(o)) for o in objs if o is not None]
+        hits = 0
+        pairs = 0
+        for i in range(len(shp)):
+            for j in range(i + 1, len(shp)):
+                n1, s1 = shp[i]; n2, s2 = shp[j]
+                b1, b2 = s1.BoundBox, s2.BoundBox
+                if not (b1.XMin < b2.XMax - 1e-7 and b2.XMin < b1.XMax - 1e-7 and
+                        b1.YMin < b2.YMax - 1e-7 and b2.YMin < b1.YMax - 1e-7 and
+                        b1.ZMin < b2.ZMax - 1e-7 and b2.ZMin < b1.ZMax - 1e-7):
+                    continue
+                pairs += 1
+                v = s1.common(s2).Volume
+                if v > 1e-3:
+                    hits += 1
+                    print("  INTERFERENCE {{}} x {{}}: {{:.6f}} in3".format(n1, n2, v/IN**3))
+        print("checked {{}} object(s), {{}} overlapping bbox pair(s), {{}} real interference(s)".format(
+            len(shp), pairs, hits))
+    """).format(names=object_names, doc=document))
+
+
+@mcp.tool()
+def get_errors(document: str = "") -> str:
+    """List objects that failed to recompute or are still touched.
+
+    A FreeCAD document happily holds broken features. Nothing raises, the tree
+    just shows a marker most scripted callers never look at, so a build can
+    report success while several features are in error. Check this after any
+    multi-step build.
+
+    Args:
+        document: Document name. Empty string for the active document.
+    """
+    return _call(textwrap.dedent("""\
+        doc = App.getDocument({doc!r}) if {doc!r} else App.ActiveDocument
+        bad, touched, nullshape = [], [], []
+        for o in doc.Objects:
+            if o.isError():
+                bad.append(o.Name)
+            if o.State and "Touched" in o.State:
+                touched.append(o.Name)
+            if hasattr(o, "Shape") and o.Shape is not None and o.Shape.isNull() \\
+               and o.TypeId not in ("App::Part", "App::Link"):
+                nullshape.append(o.Name)
+        print("objects        :", len(doc.Objects))
+        print("in error       :", len(bad), bad[:12])
+        print("still touched  :", len(touched), touched[:12])
+        print("null shape     :", len(nullshape), nullshape[:12])
+        if not bad and not touched:
+            print("document is clean")
+    """).format(doc=document))
+
+
+@mcp.tool()
+def export_dxf(
+    object_names: str,
+    file_path: str,
+    units: str = "in",
+    deviation: float = 0.01,
+    document: str = "",
+) -> str:
+    """Export flat geometry to a 2D DXF, 1:1, with no external library.
+
+    Writes edges straight out of the shapes as DXF LINE entities. Curves are
+    discretised to `deviation`. This is 1:1 geometry suitable for CAM, not a
+    projected drawing view.
+
+    Why not the obvious routes: FreeCAD's importDXF exporter needs a helper
+    library it prompts to download, and that prompt deadlocks scripted sessions;
+    TechDraw's writeDXFView was verified to emit an empty file here even for
+    solids. Writing the entities directly avoids both.
+
+    The entity count is verified before reporting success -- a DXF containing
+    only headers is a failure, not an export.
+
+    Args:
+        object_names: Comma-separated object names (sketches, solids, or links).
+        file_path: Destination .dxf path.
+        units: "in" or "mm". FreeCAD works in mm; "in" divides by 25.4 and sets
+            the DXF unit headers to inches.
+        deviation: Chord tolerance for discretising curves, in output units.
+        document: Document name. Empty string for the active document.
+    """
+    return _call(textwrap.dedent("""\
+        doc = App.getDocument({doc!r}) if {doc!r} else App.ActiveDocument
+        scale = 25.4 if {units!r} == "in" else 1.0
+        insunits = 1 if {units!r} == "in" else 4
+        objs = [doc.getObject(n.strip()) for n in {names!r}.split(",") if n.strip()]
+        objs = [o for o in objs if o is not None]
+
+        def shape_of(o):
+            if o.TypeId == "App::Link":
+                b = o.LinkedObject.Shape
+                s = b.copy()
+                s.Placement = o.LinkPlacement.multiply(b.Placement)
+                return s
+            return getattr(o, "Shape", None)
+
+        segs = []
+        for o in objs:
+            sh = shape_of(o)
+            if sh is None or sh.isNull():
+                continue
+            for e in sh.Edges:
+                try:
+                    pts = e.discretize(Deviation={dev!r} * scale)
+                except Exception:
+                    pts = [e.Vertexes[0].Point, e.Vertexes[-1].Point] \\
+                          if len(e.Vertexes) >= 2 else []
+                for i in range(len(pts) - 1):
+                    a, b = pts[i], pts[i + 1]
+                    if (a - b).Length > 1e-9:
+                        segs.append((a.x / scale, a.y / scale,
+                                     b.x / scale, b.y / scale))
+
+        if not segs:
+            print("FAILED: no edges found on", [o.Name for o in objs])
+        else:
+            out = ["999", "created by FreeCAD MCP",
+                   "0", "SECTION", "2", "HEADER",
+                   "9", "$INSUNITS", "70", str(insunits),
+                   "9", "$MEASUREMENT", "70", "0" if {units!r} == "in" else "1",
+                   "0", "ENDSEC",
+                   "0", "SECTION", "2", "ENTITIES"]
+            for x1, y1, x2, y2 in segs:
+                out += ["0", "LINE", "8", "CUT",
+                        "10", "%.6f" % x1, "20", "%.6f" % y1, "30", "0.0",
+                        "11", "%.6f" % x2, "21", "%.6f" % y2, "31", "0.0"]
+            out += ["0", "ENDSEC", "0", "EOF"]
+            with open({path!r}, "w") as fh:
+                fh.write("\\n".join(out) + "\\n")
+            xs = [v for s in segs for v in (s[0], s[2])]
+            ys = [v for s in segs for v in (s[1], s[3])]
+            import os
+            print("exported", {path!r}, os.path.getsize({path!r}), "bytes")
+            print("  {{}} LINE entities from {{}} object(s)".format(len(segs), len(objs)))
+            print("  extents {{:.4f}} x {{:.4f}} {{}}".format(
+                max(xs) - min(xs), max(ys) - min(ys), {units!r}))
+    """).format(names=object_names, path=file_path, units=units,
+                dev=deviation, doc=document))
 
 
 @mcp.tool()
