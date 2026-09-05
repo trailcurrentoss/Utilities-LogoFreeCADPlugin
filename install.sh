@@ -18,24 +18,44 @@ set -e
 PLUGIN_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_NAME="$(basename "$PLUGIN_DIR")"
 
-# Detect FreeCAD Mod directory
+# Detect FreeCAD Mod directory.
+#
+# FreeCAD 1.0 and later keep per-version user data, so the plugin path is
+# ~/.local/share/FreeCAD/v1-1/Mod rather than the older unversioned
+# ~/.local/share/FreeCAD/Mod. Checking only the unversioned path silently
+# misses a 1.x install: the script either errors out or writes to a directory
+# the running FreeCAD never reads, and the installed copy then drifts behind
+# the repository without anyone noticing. Prefer the newest versioned
+# directory, sorted by version so v1-10 beats v1-9.
+MOD_DIR=""
+IS_SNAP=0
+
 if [ -d "$HOME/snap/freecad/common/Mod" ]; then
     MOD_DIR="$HOME/snap/freecad/common/Mod"
     IS_SNAP=1
-elif [ -d "$HOME/.local/share/FreeCAD/Mod" ]; then
-    MOD_DIR="$HOME/.local/share/FreeCAD/Mod"
-    IS_SNAP=0
-elif [ -d "$HOME/.FreeCAD/Mod" ]; then
-    MOD_DIR="$HOME/.FreeCAD/Mod"
-    IS_SNAP=0
 else
+    VERSIONED="$(ls -d "$HOME"/.local/share/FreeCAD/v*/ 2>/dev/null | sort -V | tail -1)"
+    if [ -n "$VERSIONED" ]; then
+        MOD_DIR="${VERSIONED}Mod"
+        mkdir -p "$MOD_DIR"
+    elif [ -d "$HOME/.local/share/FreeCAD/Mod" ]; then
+        MOD_DIR="$HOME/.local/share/FreeCAD/Mod"
+    elif [ -d "$HOME/.FreeCAD/Mod" ]; then
+        MOD_DIR="$HOME/.FreeCAD/Mod"
+    fi
+fi
+
+if [ -z "$MOD_DIR" ]; then
     echo "ERROR: Could not find FreeCAD Mod directory."
     echo "Searched:"
     echo "  $HOME/snap/freecad/common/Mod"
-    echo "  $HOME/.local/share/FreeCAD/Mod"
+    echo "  $HOME/.local/share/FreeCAD/v*/Mod   (FreeCAD 1.0+)"
+    echo "  $HOME/.local/share/FreeCAD/Mod      (older releases)"
     echo "  $HOME/.FreeCAD/Mod"
     exit 1
 fi
+
+echo "FreeCAD Mod directory: $MOD_DIR"
 
 DEST="$MOD_DIR/$PLUGIN_NAME"
 

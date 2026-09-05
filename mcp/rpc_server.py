@@ -334,6 +334,12 @@ def start(port=DEFAULT_PORT):
             "MCP RPC server failed to start on port {}: {}\n".format(port, e)
         )
         return False
+    # Introspection first, so a client can ask what this server exposes
+    # instead of having to know the method names in advance. Without it
+    # system.listMethods raises, and a caller has no way to discover that
+    # screenshot() exists at all.
+    _server.register_introspection_functions()
+
     _server.register_function(execute, "execute")
     _server.register_function(ping, "ping")
     _server.register_function(screenshot, "screenshot")
