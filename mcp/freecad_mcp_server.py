@@ -38,7 +38,14 @@ import os
 import textwrap
 import xmlrpc.client
 
-from mcp.server.fastmcp import FastMCP
+# The SDK renamed FastMCP to MCPServer in mcp 2.x. `uv run --with mcp` resolves
+# to the newest release, so pinning the import to either name breaks the server
+# outright the day the environment moves -- it stops starting, and the tools
+# simply never appear rather than failing visibly. Accept both.
+try:
+    from mcp.server.fastmcp import FastMCP as _MCPServer  # mcp 1.x
+except ImportError:  # pragma: no cover - depends on installed SDK
+    from mcp.server.mcpserver import MCPServer as _MCPServer  # mcp 2.x
 
 # ── Configuration ──────────────────────────────────────────────────
 
@@ -46,7 +53,7 @@ RPC_HOST = os.environ.get("FREECAD_RPC_HOST", "127.0.0.1")
 RPC_PORT = int(os.environ.get("FREECAD_RPC_PORT", "12785"))
 RPC_URL = "http://{}:{}/RPC2".format(RPC_HOST, RPC_PORT)
 
-mcp = FastMCP(
+mcp = _MCPServer(
     name="FreeCAD",
     instructions=textwrap.dedent("""\
         MCP server for interacting with a running FreeCAD instance.
@@ -1084,18 +1091,27 @@ def set_visibility(
                 done += 1
             except Exception:
                 continue
-            # a Body draws through its Tip feature
-            if o.TypeId == "PartDesign::Body" and getattr(o, "Tip", None) is not None:
-                try:
-                    o.Tip.ViewObject.Visibility = True
-                except Exception:
-                    pass
-            # a Link draws through its source Body's Tip
-            if o.TypeId == "App::Link":
-                src = getattr(o, "LinkedObject", None)
-                if src is not None and getattr(src, "Tip", None) is not None:
+            # Only force the Tip on when SHOWING. Forcing it on while hiding
+            # leaves the tip features drawn and the model stubbornly visible.
+            if vis:
+                # a Body draws through its Tip feature
+                if o.TypeId == "PartDesign::Body" and getattr(o, "Tip", None) is not None:
                     try:
-                        src.Tip.ViewObject.Visibility = True
+                        o.Tip.ViewObject.Visibility = True
+                    except Exception:
+                        pass
+                # a Link draws through its source Body's Tip
+                if o.TypeId == "App::Link":
+                    src = getattr(o, "LinkedObject", None)
+                    if src is not None and getattr(src, "Tip", None) is not None:
+                        try:
+                            src.Tip.ViewObject.Visibility = True
+                        except Exception:
+                            pass
+            else:
+                if o.TypeId == "PartDesign::Body" and getattr(o, "Tip", None) is not None:
+                    try:
+                        o.Tip.ViewObject.Visibility = False
                     except Exception:
                         pass
         doc.recompute()
